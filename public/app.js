@@ -10,14 +10,14 @@
   const $ = id => document.getElementById(id);
   const ui = {
     landing: $("landing"), game: $("game"), name: $("player-name"), roomInput: $("room-code"), error: $("lobby-error"), board: $("board"), playerList: $("players-list"), status: $("game-status"),
-    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast"), createBoard: $("create-board"), copyLink: $("copy-link"), roomSetup: $("room-setup"), hostSettings: $("host-settings"), guestWaiting: $("guest-waiting"), setupPlayers: $("setup-players"), setupPlayerCount: $("setup-player-count"), setupShareCode: $("setup-share-code"), dashboard: $("dashboard"), heading: $("game-heading"), settingsSummary: $("settings-summary"), phaseHint: $("phase-hint")
+    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast"), createBoard: $("create-board"), copyLink: $("copy-link"), roomSetup: $("room-setup"), hostSettings: $("host-settings"), guestWaiting: $("guest-waiting"), setupPlayers: $("setup-players"), setupPlayerCount: $("setup-player-count"), setupShareCode: $("setup-share-code"), dashboard: $("dashboard"), heading: $("game-heading"), settingsSummary: $("settings-summary"), phaseHint: $("phase-hint"), winnerOverlay: $("winner-overlay"), winnerTitle: $("winner-title"), winnerMessage: $("winner-message")
   };
   const rememberedName = localStorage.getItem("forest-mines-name");
   if (rememberedName) ui.name.value = rememberedName;
   const savedRoom = new URLSearchParams(location.search).get("room");
   if (savedRoom) ui.roomInput.value = savedRoom.toUpperCase().slice(0, 6);
 
-  let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, roomId = "", myId = "", myToken = "", toastTimer = 0;
+  let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, roomId = "", myId = "", myToken = "", toastTimer = 0, winnerDismissed = false;
   function showError(message) { ui.error.textContent = message; }
   function notify(message) { ui.toast.textContent = message; ui.toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 2600); }
   function setStatus(message, mood = "") { ui.status.lastElementChild.textContent = message; ui.status.classList.toggle("hit", mood === "hit"); ui.status.classList.toggle("found", mood === "found"); }
@@ -44,7 +44,7 @@
   }
   function startView(id, mode, config) {
     roomId = id; solo = mode === "solo"; myId = "local-player";
-    game = { config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false };
+    game = { config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, explosions: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false };
     showGame(mode); draw(); setStatus(solo ? "Лесной дух вышел на тропу. Найди его следы." : "Комната создана. Позови остальных за стол.");
   }
   function showGame(mode) {
@@ -92,6 +92,7 @@
         if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${message.room}`, myToken); }
         myId = message.me; roomId = message.room; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
+        else if (game.over) showWinner();
         if (game.phase === "lobby") setStatus(game.hostId === myId ? "Комната открыта. Друзья могут присоединяться; выбери поле, когда будете готовы." : "Ты в лобби. Ждём, пока ведущий создаст поле.");
       }
     });
@@ -102,6 +103,7 @@
     clearTimeout(botTimer);
     if (socket) { socket.close(); socket = null; }
     game = null; solo = false; roomId = ""; flagMode = false; ui.flagMode.setAttribute("aria-pressed", "false");
+    ui.winnerOverlay.classList.add("hidden"); winnerDismissed = false;
     [$("create-room"), $("join-room")].forEach(b => b.disabled = false);
     if (returnToMenu) { ui.game.classList.add("hidden"); ui.landing.classList.remove("hidden"); ui.connection.textContent = "ОДИНОЧНЫЙ РЕЖИМ"; history.replaceState({}, "", location.pathname); }
   }
@@ -120,6 +122,7 @@
       if (existing >= 0) flags.splice(existing, 1);
       else {
         if (cell.open) return;
+        if (game.players.some(other => other.id !== id && other.flags.includes(index))) { if (id === myId) setStatus("На этой клетке уже стоит флажок другого игрока.", "hit"); return; }
         if (flags.length >= game.config.flags) { if (id === myId) setStatus(`У тебя уже стоят все ${game.config.flags} флажков. Сними один, чтобы переставить.`, "hit"); return; }
         flags.push(index);
       }
@@ -128,17 +131,22 @@
       if (solo) scheduleBot(1200 + Math.random() * 1000);
       return;
     }
-    if (cell.open || cell.mine) return;
+    if (cell.open) return;
     openCells(floodCandidates(index), id);
     if (solo) scheduleBot(1400 + Math.random() * 1900);
   }
   function openCells(indices, playerId) {
     const player = game.players.find(p => p.id === playerId); if (!player) return;
     for (const i of indices) {
-      const cell = game.cells[i]; if (!cell || cell.open || cell.mine) continue;
+      const cell = game.cells[i]; if (!cell || cell.open) continue;
       cell.open = true; cell.by = player.name;
-      game.safe++;
-      if (playerId === "forest-spirit") player.flags = player.flags.filter(flag => flag !== i);
+      if (cell.mine) {
+        cell.boom = true; player.explosions = (player.explosions || 0) + 1;
+        if (playerId === myId) setStatus("Мина взорвалась! −3 очка. Игроки продолжают искать.", "hit");
+      } else {
+        game.safe++;
+        if (playerId === "forest-spirit") player.flags = player.flags.filter(flag => flag !== i);
+      }
     }
     finishIfDone(); draw();
   }
@@ -146,20 +154,25 @@
     const safeCount = game ? game.config.width * game.config.height - game.config.mines : 0;
     if (!game || game.over || game.safe < safeCount) return;
     game.over = true; game.phase = "over";
-    for (const player of game.players) player.score = player.flags.reduce((sum, index) => sum + (game.cells[index].mine ? 2 : 0), 0);
-    const top = Math.max(...game.players.map(player => player.score));
-    const winners = game.players.filter(player => player.score === top).map(player => player.name);
-    setStatus(`Итог: ${winners.join(", ")} — ${top} очков за точные флажки.`, "found");
+    for (const player of game.players) player.score = player.flags.reduce((sum, index) => sum + (game.cells[index].mine ? 2 : 0), 0) - (player.explosions || 0) * 3;
+    setStatus("Партия завершена. Результат — в итогах.", "found"); showWinner();
   }
   function summarize(event) {
     if (!event) return;
     if (event.kind === "finished") {
-      const top = Math.max(...game.players.map(player => player.score));
-      const winners = game.players.filter(player => player.score === top).map(player => player.name);
-      setStatus(`Итог: ${winners.join(", ")} — ${top} очков за точные флажки.`, "found");
+      setStatus("Партия завершена. Результат — в итогах.", "found"); showWinner();
     }
+    else if (event.kind === "boom") setStatus(`${event.name} подорвался на мине: −3 очка.`, "hit");
     else if (event.kind === "started") setStatus("Партия началась. Новые игроки уже не могут войти.");
     else if (event.kind === "joined") notify(`${event.name} сел за стол`);
+  }
+  function showWinner() {
+    if (!game?.over || winnerDismissed) return;
+    const top = Math.max(...game.players.map(player => player.score));
+    const winners = game.players.filter(player => player.score === top);
+    ui.winnerTitle.textContent = winners.length === 1 ? `Победитель — ${winners[0].name}!` : "Ничья!";
+    ui.winnerMessage.textContent = winners.length === 1 ? `${top} очков. Мины отмечены точнее всех.` : `По ${top} очков: ${winners.map(player => player.name).join(", ")}.`;
+    ui.winnerOverlay.classList.remove("hidden");
   }
   function draw() {
     if (!game) return;
@@ -189,7 +202,7 @@
       const c = game.cells[i], button = document.createElement("button"); button.type = "button"; button.className = "cell"; button.setAttribute("role", "gridcell"); button.dataset.index = i;
       if (c.open || game.over) {
         button.classList.add("revealed");
-        if (c.mine) { button.classList.add("mine"); button.textContent = "✹"; button.setAttribute("aria-label", "Мина"); }
+        if (c.mine) { button.classList.add("mine"); if (c.boom) button.classList.add("exploded"); button.textContent = "✹"; button.setAttribute("aria-label", c.boom ? `Мина взорвалась: ${c.by}` : "Мина"); }
         else if (c.near) { button.textContent = String(c.near); button.classList.add(`num-${c.near}`); button.setAttribute("aria-label", `Рядом мин: ${c.near}`); }
         else button.setAttribute("aria-label", "Безопасно");
       }
@@ -263,7 +276,7 @@
   function makeRoomCode() { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""); }
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo", PRESETS.medium); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo", PRESETS.medium); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
     const config = PRESETS[button.dataset.preset];
     $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; $("flag-total").value = config.flags;
@@ -271,6 +284,7 @@
   });
   for (const id of ["board-width", "board-height", "mine-total", "flag-total"]) $(id).addEventListener("input", () => { document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; });
   ui.createBoard.addEventListener("click", () => { const config = chosenSettings(true); if (socket && config && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start", config })); });
+  $("winner-close").addEventListener("click", () => { winnerDismissed = true; ui.winnerOverlay.classList.add("hidden"); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   $("leave-room").addEventListener("click", () => teardown());
   $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });

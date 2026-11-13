@@ -8,7 +8,7 @@ const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#
 interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number }
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
-interface Player { id: string; token: string; name: string; score: number; color: string; flags: number[]; online: boolean }
+interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean }
 interface Game { config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
@@ -42,8 +42,8 @@ function freshGame(): Game { return { config: null, cells: [], players: [], safe
 function stripSecrets(game: Game, me: Player) {
   return {
     type: "state", room: "", me: me.id,
-    cells: game.cells.map(c => c.open || game.over ? { open: true, mine: c.mine, near: c.near, boom: false, by: c.by } : { open: false }),
-    players: game.players.map(({ id, name, score, color, flags, online }) => ({ id, name, score: game.over ? score : 0, color, flags, online })),
+    cells: game.cells.map(c => c.open || game.over ? { open: true, mine: c.mine, near: c.near, boom: c.boom, by: c.by } : { open: false }),
+    players: game.players.map(({ id, name, score, explosions, color, flags, online }) => ({ id, name, score: game.over ? score : 0, explosions, color, flags, online })),
     config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, event: game.event,
   };
 }
@@ -76,7 +76,11 @@ export class GameRoom extends DurableObject<Env> {
         if (!this.game.config && this.game.cells.length) this.game.config = { ...DEFAULT_CONFIG };
         this.game.phase ??= this.game.over ? "over" : "playing";
         this.game.hostId ??= this.game.players[0]?.id ?? "";
-        this.game.players.forEach((player, index) => { player.token ??= crypto.randomUUID(); player.color ??= PLAYER_COLORS[index % PLAYER_COLORS.length]; player.flags ??= []; player.score ??= 0; });
+        const occupiedFlags = new Set<number>();
+        this.game.players.forEach((player, index) => {
+          player.token ??= crypto.randomUUID(); player.color ??= PLAYER_COLORS[index % PLAYER_COLORS.length]; player.flags ??= []; player.score ??= 0; player.explosions ??= 0;
+          player.flags = player.flags.filter(flag => { if (occupiedFlags.has(flag)) return false; occupiedFlags.add(flag); return true; });
+        });
       }
     });
   }
@@ -129,13 +133,17 @@ export class GameRoom extends DurableObject<Env> {
         if (already >= 0) player.flags.splice(already, 1);
         else {
           if (cell.open) return;
+          if (this.game.players.some(other => other.id !== player.id && other.flags.includes(index))) { socket.send(JSON.stringify({ type: "notice", text: "На этой клетке уже стоит флажок другого игрока." })); return; }
           const flagLimit = this.game.config?.flags ?? DEFAULT_CONFIG.flags;
           if (player.flags.length >= flagLimit) { socket.send(JSON.stringify({ type: "notice", text: `На поле можно поставить не больше ${flagLimit} своих флажков. Сними один, чтобы поставить другой.` })); return; }
           player.flags.push(index);
         }
       } else {
         if (cell.open) return;
-        if (!cell.mine) {
+        if (cell.mine) {
+          cell.open = true; cell.boom = true; cell.by = player.name; player.explosions++;
+          this.game.event = { kind: "boom", name: player.name, id: player.id };
+        } else {
           const opened = new Set([index]), queue = [index];
           const config = this.game.config ?? DEFAULT_CONFIG;
           while (queue.length) { const next = queue.shift()!; this.game.cells[next].open = true; this.game.cells[next].by = player.name; this.game.safe++; if (this.game.cells[next].near) continue; for (const neighbour of neighbours(next, config)) if (!this.game.cells[neighbour].open && !this.game.cells[neighbour].mine && !opened.has(neighbour)) { opened.add(neighbour); queue.push(neighbour); } }
@@ -161,13 +169,13 @@ export class GameRoom extends DurableObject<Env> {
       if (this.game.phase !== "lobby") { socket.send(JSON.stringify({ type: "error", message: "Партия уже началась. Новые игроки входят только в лобби." })); socket.close(1008, "game already started"); return; }
       if (this.game.players.filter(p => p.online).length >= MAX_PLAYERS) { socket.send(JSON.stringify({ type: "error", message: "В комнате уже 20 игроков." })); socket.close(1008, "room full"); return; }
       const usedColors = new Set(this.game.players.map(p => p.color));
-      player = { id, token: token || crypto.randomUUID(), name, score: 0, color: PLAYER_COLORS.find(color => !usedColors.has(color)) ?? PLAYER_COLORS[this.game.players.length % PLAYER_COLORS.length], flags: [], online: true };
+      player = { id, token: token || crypto.randomUUID(), name, score: 0, explosions: 0, color: PLAYER_COLORS.find(color => !usedColors.has(color)) ?? PLAYER_COLORS[this.game.players.length % PLAYER_COLORS.length], flags: [], online: true };
       this.game.players.push(player);
       if (!this.game.hostId || !this.game.players.some(p => p.id === this.game!.hostId && p.online)) this.game.hostId = id;
       this.game.event = { kind: "joined", name, id };
     } else {
       if (!token || token !== player.token) { socket.send(JSON.stringify({ type: "error", message: "Не удалось подтвердить участника комнаты. Создай новую комнату или проверь ссылку." })); socket.close(1008, "invalid player token"); return; }
-      player.name = name; player.online = true; player.flags ??= []; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (!this.game.over) player.score = 0;
+      player.name = name; player.online = true; player.flags ??= []; player.explosions ??= 0; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (!this.game.over) player.score = 0;
     }
     socket.serializeAttachment({ id, name } satisfies Identity);
     await this.publish();
@@ -176,7 +184,7 @@ export class GameRoom extends DurableObject<Env> {
   private finishIfDone() {
     if (!this.game || this.game.over) return;
     this.game.over = true; this.game.phase = "over";
-    for (const player of this.game.players) player.score = player.flags.reduce((score, index) => score + (this.game!.cells[index].mine ? 2 : 0), 0);
+    for (const player of this.game.players) player.score = player.flags.reduce((score, index) => score + (this.game!.cells[index].mine ? 2 : 0), 0) - player.explosions * 3;
     this.game.event = { kind: "finished", name: "", id: "" };
   }
   private async publish() {

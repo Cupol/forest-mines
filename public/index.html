@@ -74,10 +74,19 @@
           <div class="board-wrap"><div class="board" id="board" role="grid" aria-label="Поле сапёра"></div></div>
           <div class="status-line" id="game-status" role="status"><span class="status-dot"></span><span>Комната готова. Присоединяйся — и начинайте!</span></div>
         </section>
-        <aside class="score-panel card"><div class="panel-title"><span>ПРОГРЕСС</span><span class="moon">◔</span></div><div class="progress-number"><strong id="found-count">0</strong><span> / 223</span></div><p class="progress-caption">БЕЗОПАСНЫХ КЛЕТОК ОТКРЫТО</p><div class="progress-track"><i id="progress-bar"></i></div><div class="round-divider"></div><div class="my-score"><span id="score-label">РЕЗУЛЬТАТ В КОНЦЕ</span><strong id="my-score">—</strong></div><p class="scoring-note"><b>+2</b> за каждый твой флажок на мине<br>Пустой флажок очков не даёт</p><div class="room-share"><span>КОД ДРУЗЬЯМ</span><strong id="share-code">----</strong></div></aside>
+        <aside class="score-panel card"><div class="panel-title"><span>ПРОГРЕСС</span><span class="moon">◔</span></div><div class="progress-number"><strong id="found-count">0</strong><span> / 223</span></div><p class="progress-caption">БЕЗОПАСНЫХ КЛЕТОК ОТКРЫТО</p><div class="progress-track"><i id="progress-bar"></i></div><div class="round-divider"></div><div class="my-score"><span id="score-label">РЕЗУЛЬТАТ В КОНЦЕ</span><strong id="my-score">—</strong></div><p class="scoring-note"><b>+2</b> за флажок на мине<br><b>−3</b> за подрыв<br>Пустой флажок очков не даёт</p><div class="room-share"><span>КОД ДРУЗЬЯМ</span><strong id="share-code">----</strong></div></aside>
       </div>
       <footer class="game-footer"><span id="phase-hint">МИНЫ ОТКРОЮТСЯ ПОСЛЕ ОТКРЫТИЯ ВСЕХ БЕЗОПАСНЫХ КЛЕТОК</span><span>СОЕДИНЕНИЕ ДОСТУПНО ТОЛЬКО В ЛОББИ</span></footer>
     </section>
+    <div id="winner-overlay" class="winner-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="winner-title">
+      <section class="winner-card card">
+        <span class="eyebrow">ИТОГИ ЛЕСНОЙ ПАРТИИ</span>
+        <div class="winner-seal" aria-hidden="true">✦</div>
+        <h2 id="winner-title">Победитель</h2>
+        <p id="winner-message"></p>
+        <button id="winner-close" class="button button-primary">Посмотреть поле</button>
+      </section>
+    </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </main>
 </body>
