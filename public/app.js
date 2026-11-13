@@ -10,15 +10,30 @@
   const $ = id => document.getElementById(id);
   const ui = {
     landing: $("landing"), game: $("game"), name: $("player-name"), roomInput: $("room-code"), error: $("lobby-error"), board: $("board"), playerList: $("players-list"), status: $("game-status"),
-    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), safeTotal: $("safe-total"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast"), createBoard: $("create-board"), copyLink: $("copy-link"), roomSetup: $("room-setup"), hostSettings: $("host-settings"), guestWaiting: $("guest-waiting"), setupPlayers: $("setup-players"), setupPlayerCount: $("setup-player-count"), setupShareCode: $("setup-share-code"), dashboard: $("dashboard"), heading: $("game-heading"), settingsSummary: $("settings-summary"), phaseHint: $("phase-hint"), winnerOverlay: $("winner-overlay"), winnerTitle: $("winner-title"), winnerMessage: $("winner-message")
+    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), safeTotal: $("safe-total"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast"), createBoard: $("create-board"), copyLink: $("copy-link"), roomSetup: $("room-setup"), hostSettings: $("host-settings"), guestWaiting: $("guest-waiting"), setupPlayers: $("setup-players"), setupPlayerCount: $("setup-player-count"), setupShareCode: $("setup-share-code"), dashboard: $("dashboard"), heading: $("game-heading"), settingsSummary: $("settings-summary"), phaseHint: $("phase-hint"), winnerOverlay: $("winner-overlay"), winnerTitle: $("winner-title"), winnerMessage: $("winner-message"),
+    drawLobby: $("draw-lobby"), drawHostSettings: $("draw-host-settings"), drawGuestWaiting: $("draw-guest-waiting"), drawLobbyPlayers: $("draw-lobby-players"), drawLobbyCount: $("draw-lobby-player-count"), drawLobbyCode: $("draw-lobby-code"), drawLobbyError: $("draw-lobby-error"), drawDashboard: $("draw-dashboard"), drawCanvas: $("draw-canvas"), drawTools: $("draw-tools"), drawWord: $("draw-word"), drawClock: $("draw-clock"), drawRound: $("draw-round-label"), drawTurn: $("draw-turn-label"), drawPlayerCount: $("draw-player-count"), drawScores: $("draw-scores"), drawChat: $("draw-chat"), drawGuessForm: $("draw-guess-form"), drawGuess: $("draw-guess")
   };
   const rememberedName = localStorage.getItem("forest-mines-name");
   if (rememberedName) ui.name.value = rememberedName;
   const savedRoom = new URLSearchParams(location.search).get("room");
+  const savedMode = new URLSearchParams(location.search).get("game");
+  let selectedMode = savedMode === "draw" ? "draw" : "sapper";
   if (savedRoom) ui.roomInput.value = savedRoom.toUpperCase().slice(0, 6);
 
-  let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, flagLimitCustom = false, roomId = "", myId = "", myToken = "", toastTimer = 0, winnerDismissed = false;
+  let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, flagLimitCustom = false, roomId = "", myId = "", myToken = "", toastTimer = 0, winnerDismissed = false, drawingColor = "#17201c", activeStroke = null, drawClockTimer = 0;
   function showError(message) { ui.error.textContent = message; }
+  function applySelectedMode() {
+    const drawing = selectedMode === "draw";
+    document.title = drawing ? "Лесная рисовалка — Лесная сфера" : "Лесной сапёр — Лесная сфера";
+    $("game-index").textContent = drawing ? "ИГРА 2 / 2" : "ИГРА 1 / 2";
+    $("hero-eyebrow").textContent = drawing ? "СЛОВО ЗАДАНО. ТВОЯ ОЧЕРЕДЬ РИСОВАТЬ." : "ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.";
+    $("hero-title").innerHTML = drawing ? "Лесная<br><em>рисовалка</em>" : "Лесной<br><em>сапёр</em>";
+    $("hero-description").textContent = drawing ? "Рисуй загаданное слово, пока друзья угадывают. Очки получают самые быстрые догадчики." : "Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.";
+    $("hero-rules").innerHTML = drawing ? "<span><b>✎</b> рисуй по очереди</span><span><b>⌛</b> угадай за минуту</span><span><b>★</b> очки за скорость</span>" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
+    $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
+    $("solo-start").textContent = drawing ? "Порисовать одному (практика) →" : "Остаться и сыграть с лесным духом →";
+  }
+  function changeGame() { selectedMode = selectedMode === "sapper" ? "draw" : "sapper"; ui.roomInput.value = ""; applySelectedMode(); history.replaceState({}, "", `${location.pathname}?game=${selectedMode}`); }
   function notify(message) { ui.toast.textContent = message; ui.toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 2600); }
   function setStatus(message, mood = "") { ui.status.lastElementChild.textContent = message; ui.status.classList.toggle("hit", mood === "hit"); ui.status.classList.toggle("found", mood === "found"); }
   function newId() { return crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`; }
@@ -52,13 +67,13 @@
   }
   function startView(id, mode, config) {
     roomId = id; solo = mode === "solo"; myId = "local-player";
-    game = { config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, explosions: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false, winnerId: "" };
+    game = { mode: "sapper", config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, explosions: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false, winnerId: "" };
     showGame(mode); draw(); setStatus(solo ? "Лесной дух вышел на тропу. Найди его следы." : "Комната создана. Позови остальных за стол.");
   }
   function showGame(mode) {
     ui.landing.classList.add("hidden"); ui.game.classList.remove("hidden");
-    ui.connection.textContent = mode === "solo" ? "ОДИНОЧНЫЙ РЕЖИМ · БОТ" : mode === "online" ? "В СЕТИ · LIVE" : "КОМНАТА ГОТОВА";
-    ui.room.textContent = "#" + roomId; ui.shareCode.textContent = roomId; history.replaceState({}, "", `?room=${encodeURIComponent(roomId)}`);
+    ui.connection.textContent = mode === "solo" ? "ОДИНОЧНЫЙ РЕЖИМ · БОТ" : mode === "online" ? "В СЕТИ · LIVE" : mode === "draw" ? "ПРАКТИКА РИСОВАНИЯ" : "КОМНАТА ГОТОВА";
+    ui.room.textContent = "#" + roomId; ui.shareCode.textContent = roomId; history.replaceState({}, "", `?room=${encodeURIComponent(roomId)}&game=${selectedMode}`);
   }
   function apiAddress() {
     const raw = window.MINES_CONFIG && window.MINES_CONFIG.api;
@@ -99,32 +114,33 @@
     const protocol = api.includes("wss:") ? "wss:" : "ws:";
     const host = api.replace(/^wss?:\/\//i, "");
     try {
-      socket = new WebSocket(`${protocol}//${host}/api/room/${encodeURIComponent(roomId)}?create=${makeNew ? "1" : "0"}`);
+      socket = new WebSocket(`${protocol}//${host}/api/room/${encodeURIComponent(roomId)}?create=${makeNew ? "1" : "0"}&game=${selectedMode}`);
     } catch (_) { [$("create-room"), $("join-room")].forEach(b => b.disabled = false); showError("Не удалось открыть соединение. Проверь адрес сервера."); return; }
-    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "join", id: myId, token: myToken, name, create: makeNew })));
+    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "join", id: myId, token: myToken, name, create: makeNew, mode: selectedMode })));
     socket.addEventListener("message", event => {
       let message; try { message = JSON.parse(event.data); } catch (_) { return; }
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
-      if (message.type === "notice") { setStatus(message.text || "Действие недоступно.", "hit"); return; }
+      if (message.type === "notice") { if (selectedMode === "draw") ui.drawLobbyError.textContent = message.text || "Действие недоступно."; else setStatus(message.text || "Действие недоступно.", "hit"); return; }
       if (message.type === "state") {
-        game = { cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "" };
+        selectedMode = message.mode === "draw" ? "draw" : "sapper";
+        game = { mode: selectedMode, cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "", drawing: message.drawing, chat: message.chat || [] };
         if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${message.room}`, myToken); }
         myId = message.me; roomId = message.room; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
         else if (game.over) showWinner();
-        if (game.phase === "lobby") setStatus(game.hostId === myId ? "Комната открыта. Друзья могут присоединяться; выбери поле, когда будете готовы." : "Ты в лобби. Ждём, пока ведущий создаст поле.");
+        if (game.phase === "lobby" && game.mode !== "draw") setStatus(game.hostId === myId ? "Комната открыта. Друзья могут присоединяться; выбери поле, когда будете готовы." : "Ты в лобби. Ждём, пока ведущий создаст поле.");
       }
     });
     socket.addEventListener("close", () => { if (game && !solo) { setStatus("Связь с комнатой прервалась. Проверь интернет и зайди ещё раз.", "hit"); notify("Соединение закрыто"); } });
     socket.addEventListener("error", () => { [$("create-room"), $("join-room")].forEach(b => b.disabled = false); showError("Не удалось соединиться с сервером комнаты."); });
   }
   function teardown(returnToMenu = true) {
-    clearTimeout(botTimer);
+    clearTimeout(botTimer); clearInterval(drawClockTimer); drawClockTimer = 0;
     if (socket) { socket.close(); socket = null; }
     game = null; solo = false; roomId = ""; flagMode = false; ui.flagMode.setAttribute("aria-pressed", "false");
     ui.winnerOverlay.classList.add("hidden"); winnerDismissed = false;
     [$("create-room"), $("join-room")].forEach(b => b.disabled = false);
-    if (returnToMenu) { ui.game.classList.add("hidden"); ui.landing.classList.remove("hidden"); ui.connection.textContent = "ОДИНОЧНЫЙ РЕЖИМ"; history.replaceState({}, "", location.pathname); }
+    if (returnToMenu) { ui.game.classList.add("hidden"); ui.landing.classList.remove("hidden"); ui.connection.textContent = "ОДИНОЧНЫЙ РЕЖИМ"; applySelectedMode(); history.replaceState({}, "", `${location.pathname}?game=${selectedMode}`); }
   }
   function sendAction(type, index) {
     if (!game || game.over || game.phase !== "playing") return;
@@ -182,6 +198,7 @@
   }
   function summarize(event) {
     if (!event) return;
+    if (game?.mode === "draw") { if (event.kind === "drawFinished") notify("Рисовальная игра завершена"); return; }
     if (event.kind === "finished") {
       setStatus("Партия завершена. Результат — в итогах.", "found"); showWinner();
     }
@@ -197,8 +214,74 @@
     ui.winnerMessage.textContent = `${winner.score} очков. ${exact ? "Равенство решено жребием." : "Итог определён по очкам, точности флажков и числу подрывов."}`;
     ui.winnerOverlay.classList.remove("hidden");
   }
+  function drawDrawingGame() {
+    if (drawClockTimer) { clearInterval(drawClockTimer); drawClockTimer = 0; }
+    ui.roomSetup.classList.add("hidden"); ui.dashboard.classList.add("hidden");
+    ui.drawLobby.classList.toggle("hidden", game.phase !== "lobby");
+    ui.drawDashboard.classList.toggle("hidden", game.phase === "lobby");
+    ui.heading.textContent = game.phase === "lobby" ? "Комната рисования · ждём игроков" : game.phase === "over" ? "Итоги рисовальной игры" : "Лесная рисовалка";
+    ui.copyLink.disabled = game.phase !== "lobby"; ui.copyLink.textContent = game.phase === "lobby" ? "Пригласить ↗" : "Набор закрыт";
+    const playersOnline = game.players.filter(player => player.online !== false);
+    if (game.phase === "lobby") {
+      const isHost = game.hostId === myId;
+      ui.drawHostSettings.classList.toggle("hidden", !isHost); ui.drawGuestWaiting.classList.toggle("hidden", isHost);
+      $("start-drawing").disabled = playersOnline.length < 2;
+      ui.drawLobbyError.textContent = playersOnline.length < 2 && isHost ? "Пригласи хотя бы одного игрока, чтобы начать." : "";
+      ui.drawLobbyCount.textContent = `${playersOnline.length} / ${MAX_PLAYERS}`; ui.drawLobbyCode.textContent = roomId;
+      ui.drawLobbyPlayers.replaceChildren();
+      for (const player of game.players) {
+        const row = document.createElement("li"), avatar = document.createElement("span"), details = document.createElement("span"), name = document.createElement("span"), role = document.createElement("span");
+        row.className = "player-row"; avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); avatar.style.color = player.color || PLAYER_COLORS[0]; details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.online === false ? " · вышел" : ""); role.className = "player-sub"; role.textContent = player.id === game.hostId ? "ведущий" : "готов играть"; details.append(name, role); row.append(avatar, details); ui.drawLobbyPlayers.append(row);
+      }
+      return;
+    }
+    const drawing = game.drawing;
+    if (!drawing) return;
+    const drawer = game.players.find(player => player.id === drawing.drawerId);
+    ui.drawRound.textContent = `РАУНД ${drawing.round} / ${drawing.roundsTotal}`;
+    ui.drawWord.innerHTML = game.phase === "over" ? `Слово: <strong>${escapeMarkup(drawing.word || "—")}</strong>` : drawing.drawerId === myId ? `ТВОЁ СЛОВО: <strong>${escapeMarkup(drawing.word)}</strong>` : drawing.guessedPlayers.includes(myId) ? "Верно! Ждём остальных" : `Что это? <strong>${escapeMarkup(drawing.hint || "_ _ _")}</strong>`;
+    ui.drawTurn.textContent = game.phase === "over" ? "ИГРА ОКОНЧЕНА" : drawing.drawerId === myId ? "ТЫ РИСУЕШЬ" : `${drawer?.name ?? "Игрок"} РИСУЕТ`;
+    ui.drawTools.classList.toggle("hidden", drawing.drawerId !== myId || game.phase !== "playing");
+    const canGuess = game.phase === "playing" && drawing.drawerId !== myId && !drawing.guessedPlayers.includes(myId);
+    ui.drawGuess.disabled = !canGuess; ui.drawGuess.placeholder = canGuess ? "Напиши свою догадку…" : drawing.drawerId === myId ? "Ты рисуешь — остальные угадывают" : "Ты угадал!";
+    ui.drawGuessForm.querySelector("button").disabled = !canGuess;
+    ui.drawPlayerCount.textContent = `${playersOnline.length}`;
+    ui.drawScores.replaceChildren();
+    for (const player of [...game.players].sort((a, b) => b.score - a.score)) {
+      const row = document.createElement("li"), avatar = document.createElement("span"), details = document.createElement("span"), name = document.createElement("span"), status = document.createElement("span"), score = document.createElement("span");
+      row.className = "player-row"; avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); avatar.style.color = player.color || PLAYER_COLORS[0]; details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.id === drawing.drawerId ? " · рисует" : player.online === false ? " · вышел" : ""); status.className = "player-sub"; status.textContent = drawing.guessedPlayers.includes(player.id) ? "угадал слово" : ""; score.className = "draw-score"; score.textContent = String(player.score); details.append(name, status); row.append(avatar, details, score); ui.drawScores.append(row);
+    }
+    ui.drawChat.replaceChildren();
+    for (const line of game.chat || []) { const message = document.createElement("p"); message.className = line.kind === "system" ? "system-message" : ""; if (line.kind === "chat") { const label = document.createElement("b"); label.className = "chat-name"; label.textContent = `${line.name}: `; message.append(label, document.createTextNode(line.text)); } else message.textContent = line.text; ui.drawChat.append(message); }
+    ui.drawChat.scrollTop = ui.drawChat.scrollHeight;
+    renderDrawingCanvas(); updateDrawClock();
+    if (game.phase === "playing" && drawing.endsAt) drawClockTimer = setInterval(updateDrawClock, 500);
+    $("phase-hint").textContent = game.phase === "over" ? "ВСЕ РАУНДЫ ЗАВЕРШЕНЫ · ИТОГИ СПРАВА" : "РИСУЙ ИЛИ УГАДЫВАЙ · КАЖДЫЙ ИГРОК РИСУЕТ ОДИН РАЗ";
+  }
+  function escapeMarkup(value) { return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char])); }
+  function renderDrawingCanvas(extra = null) {
+    const canvas = ui.drawCanvas, context = canvas.getContext("2d");
+    context.fillStyle = "#f3efdf"; context.fillRect(0, 0, canvas.width, canvas.height);
+    const strokes = [...(game?.drawing?.strokes || []), ...(extra ? [extra] : [])];
+    for (const stroke of strokes) {
+      if (!stroke.points?.length) continue;
+      context.strokeStyle = stroke.color; context.lineWidth = Math.max(2, stroke.size * canvas.width); context.lineCap = "round"; context.lineJoin = "round";
+      context.beginPath(); context.moveTo(stroke.points[0].x * canvas.width, stroke.points[0].y * canvas.height);
+      for (let i = 1; i < stroke.points.length; i++) context.lineTo(stroke.points[i].x * canvas.width, stroke.points[i].y * canvas.height);
+      context.stroke();
+    }
+  }
+  function updateDrawClock() {
+    const drawing = game?.drawing;
+    if (!drawing || !drawing.endsAt) { ui.drawClock.textContent = solo ? "ПРАКТИКА" : "—"; return; }
+    const seconds = Math.max(0, Math.ceil((drawing.endsAt - Date.now()) / 1000));
+    ui.drawClock.textContent = `0:${String(seconds).padStart(2, "0")}`;
+    ui.drawClock.classList.toggle("time-low", seconds <= 10);
+  }
   function draw() {
     if (!game) return;
+    if (game.mode === "draw") { drawDrawingGame(); return; }
+    ui.drawLobby.classList.add("hidden"); ui.drawDashboard.classList.add("hidden");
     if (game.phase === "lobby" || !game.config) {
       const isHost = game.hostId === myId;
       ui.roomSetup.classList.remove("hidden"); ui.dashboard.classList.add("hidden");
@@ -301,9 +384,16 @@
     return [...found];
   }
   function makeRoomCode() { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""); }
+  function startDrawingPractice() {
+    if (!cleanName()) return;
+    solo = true; myId = "local-practice"; roomId = "ПРАКТИКА";
+    game = { mode: "draw", phase: "playing", over: false, hostId: myId, players: [{ id: myId, name: ui.name.value.trim(), score: 0, color: PLAYER_COLORS[0], online: true }], drawing: { round: 1, roundsTotal: 1, drawerId: myId, word: "Свободное рисование", hint: "", startedAt: Date.now(), endsAt: 0, strokes: [], guessedPlayers: [] }, chat: [] };
+    showGame("draw"); draw();
+  }
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("game-prev").addEventListener("click", changeGame); $("game-next").addEventListener("click", changeGame);
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
     const config = PRESETS[button.dataset.preset];
     flagLimitCustom = false; $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; refreshAutomaticFlagLimit(true);
@@ -312,11 +402,36 @@
   for (const id of ["board-width", "board-height", "mine-total"]) $(id).addEventListener("input", () => { document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; refreshAutomaticFlagLimit(); });
   $("flag-total").addEventListener("input", () => { flagLimitCustom = true; document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; });
   ui.createBoard.addEventListener("click", () => { const config = chosenSettings(true); if (socket && config && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start", config })); });
+  $("start-drawing").addEventListener("click", () => { ui.drawLobbyError.textContent = ""; if (socket?.readyState === WebSocket.OPEN && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start" })); });
+  ui.drawGuessForm.addEventListener("submit", event => { event.preventDefault(); const text = ui.drawGuess.value.trim(); if (!text || !game || game.mode !== "draw") return; if (solo) { ui.drawGuess.value = ""; return; } if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "guess", text })); ui.drawGuess.value = ""; });
+  document.querySelectorAll(".draw-colors button").forEach(button => { button.style.setProperty("--draw-color", button.dataset.color); button.addEventListener("click", () => { drawingColor = button.dataset.color; document.querySelectorAll(".draw-colors button").forEach(item => item.classList.toggle("selected", item === button)); }); });
+  $("draw-clear").addEventListener("click", () => { if (!game?.drawing || game.drawing.drawerId !== myId) return; if (solo) { game.drawing.strokes = []; renderDrawingCanvas(); } else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "clear" })); });
+  ui.drawCanvas.addEventListener("pointerdown", event => {
+    if (game?.mode !== "draw" || game.phase !== "playing" || game.drawing?.drawerId !== myId) return;
+    const rect = ui.drawCanvas.getBoundingClientRect(); ui.drawCanvas.setPointerCapture(event.pointerId);
+    activeStroke = { color: drawingColor, size: Number($("draw-size").value) / ui.drawCanvas.width, points: [{ x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height }] };
+  });
+  ui.drawCanvas.addEventListener("pointermove", event => {
+    if (!activeStroke) return;
+    const rect = ui.drawCanvas.getBoundingClientRect(), point = { x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)), y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)) }, previous = activeStroke.points.at(-1);
+    if (Math.hypot(point.x - previous.x, point.y - previous.y) < 0.003) return;
+    if (activeStroke.points.length < 100) activeStroke.points.push(point); else activeStroke.points[activeStroke.points.length - 1] = point;
+    renderDrawingCanvas(activeStroke);
+  });
+  function finishStroke() {
+    if (!activeStroke || !game?.drawing) return;
+    if (activeStroke.points.length === 1) activeStroke.points.push({ ...activeStroke.points[0], x: Math.min(1, activeStroke.points[0].x + 0.002) });
+    if (solo) { game.drawing.strokes.push(activeStroke); renderDrawingCanvas(); }
+    else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stroke", stroke: activeStroke }));
+    activeStroke = null;
+  }
+  ui.drawCanvas.addEventListener("pointerup", finishStroke); ui.drawCanvas.addEventListener("pointercancel", finishStroke);
   $("winner-close").addEventListener("click", () => { winnerDismissed = true; ui.winnerOverlay.classList.add("hidden"); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   $("leave-room").addEventListener("click", () => teardown());
-  $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });
+  $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}&game=${selectedMode}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });
   ui.flagMode.addEventListener("click", () => { flagMode = !flagMode; ui.flagMode.setAttribute("aria-pressed", String(flagMode)); setStatus(flagMode ? "Режим флажка: коснись клетки, которую хочешь проверить." : "Режим проверки клетки."); });
+  applySelectedMode(); document.querySelector(".draw-colors button[data-color='#17201c']")?.classList.add("selected");
   document.addEventListener("keydown", event => { if (event.key === "Escape" && game) teardown(); });
   window.addEventListener("beforeunload", () => { if (socket) socket.close(); });
   if (savedRoom) { ui.connection.textContent = "КОМНАТА ДРУЗЬЕЙ"; }

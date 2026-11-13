@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101817">
-  <meta name="description" content="Лесной сапёр — дружеская игра на поиск мин и общий счёт">
-  <title>Лесной сапёр</title>
-  <link rel="stylesheet" href="style.css?v=custom-player-flags-1">
+  <meta name="description" content="Лесная сфера — сапёр и комнатная рисовальная игра для друзей">
+  <title>Лесная сфера — игры для друзей</title>
+  <link rel="stylesheet" href="style.css?v=forest-drawing-1">
   <script src="config.js"></script>
-  <script src="app.js?v=custom-player-flags-1" defer></script>
+  <script src="app.js?v=forest-drawing-1" defer></script>
 </head>
 <body>
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -20,16 +20,17 @@
 
     <section class="landing" id="landing">
       <div class="intro">
-        <span class="eyebrow">ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.</span>
-        <h1>Лесной<br><em>сапёр</em></h1>
-        <p>Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.</p>
-        <div class="rules-strip"><span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span></div>
+        <div class="game-switch" aria-label="Переключение игр"><button id="game-prev" class="icon-button" aria-label="Предыдущая игра">←</button><span id="game-index">ИГРА 1 / 2</span><button id="game-next" class="icon-button" aria-label="Следующая игра">→</button></div>
+        <span class="eyebrow" id="hero-eyebrow">ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.</span>
+        <h1 id="hero-title">Лесной<br><em>сапёр</em></h1>
+        <p id="hero-description">Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.</p>
+        <div class="rules-strip" id="hero-rules"><span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span></div>
       </div>
       <section class="lobby card">
         <div class="card-heading"><span class="eyebrow">СТАРАЯ ЛЕСНАЯ СТОЛОВАЯ</span><span class="seal">01 / 03</span></div>
         <label class="field-label" for="player-name">ТВОЁ ИМЯ</label>
         <input id="player-name" maxlength="20" placeholder="Смотритель" autocomplete="nickname">
-        <button id="create-room" class="button button-primary"><span>Создать комнату</span><span>↗</span></button>
+        <button id="create-room" class="button button-primary"><span id="create-room-text">Создать комнату</span><span>↗</span></button>
         <div class="divider"><span>или присоединиться</span></div>
         <div class="join-line"><input id="room-code" maxlength="6" placeholder="КОД КОМНАТЫ" aria-label="Код комнаты"><button id="join-room" class="button button-quiet" aria-label="Войти по коду">Войти <span>→</span></button></div>
         <button id="solo-start" class="text-button">Остаться и сыграть с лесным духом <span>→</span></button>
@@ -66,6 +67,28 @@
           <div id="guest-waiting" class="guest-waiting hidden"><span class="eyebrow">ЛОББИ · ПОЛЕ ЕЩЁ НЕ СОЗДАНО</span><h3>Ждём ведущего</h3><p>Можно присоединиться к комнате и дождаться начала. Ведущий выберет поле и запустит партию.</p></div>
         </div>
         <aside class="room-roster card"><div class="panel-title"><span>УЖЕ В КОМНАТЕ</span><span id="setup-player-count">1 / 20</span></div><ol id="setup-players" class="players-list"></ol><div class="setup-share"><span>КОД ДРУЗЬЯМ</span><strong id="setup-share-code">------</strong></div></aside>
+      </section>
+      <section id="draw-lobby" class="room-setup hidden">
+        <div class="room-setup-card card">
+          <div id="draw-host-settings">
+            <div class="card-heading"><span class="eyebrow">КОМНАТА РИСОВАНИЯ</span><span class="seal">НАСТРОЙКИ ХОСТА</span></div>
+            <p class="setup-description">Когда соберутся игроки, запусти игру. По очереди каждый нарисует слово, а остальные постараются угадать его быстрее.</p>
+            <div class="drawing-rules"><span>✎ Один художник за раунд</span><span>⌛ 60 секунд на слово</span><span>★ Очки за скорость</span></div>
+            <button id="start-drawing" class="button button-primary create-board">Начать рисовальную игру <span>↗</span></button>
+            <p id="draw-lobby-error" class="lobby-error" role="alert"></p>
+          </div>
+          <div id="draw-guest-waiting" class="guest-waiting hidden"><span class="eyebrow">ЛОББИ · ЖДЁМ ХУДОЖНИКА</span><h3>Скоро начнём</h3><p>Ты в комнате. Ведущий запустит игру, когда все будут готовы.</p></div>
+        </div>
+        <aside class="room-roster card"><div class="panel-title"><span>УЖЕ В КОМНАТЕ</span><span id="draw-lobby-player-count">1 / 20</span></div><ol id="draw-lobby-players" class="players-list"></ol><div class="setup-share"><span>КОД ДРУЗЬЯМ</span><strong id="draw-lobby-code">------</strong></div></aside>
+      </section>
+      <section id="draw-dashboard" class="draw-layout hidden">
+        <div class="draw-main card">
+          <div class="draw-toolbar"><div><span class="eyebrow" id="draw-round-label">РАУНД 1 / 4</span><strong id="draw-clock">01:00</strong></div><div id="draw-word" class="draw-word">Ждём ход…</div><div id="draw-turn-label" class="eyebrow">ХУДОЖНИК</div></div>
+          <canvas id="draw-canvas" width="900" height="540" aria-label="Холст для рисования"></canvas>
+          <div id="draw-tools" class="draw-tools hidden"><div class="draw-colors"><button type="button" data-color="#17201c" aria-label="Тёмный цвет"></button><button type="button" data-color="#d54e43" aria-label="Красный цвет"></button><button type="button" data-color="#397cb2" aria-label="Синий цвет"></button><button type="button" data-color="#e2b342" aria-label="Жёлтый цвет"></button><button type="button" data-color="#57905c" aria-label="Зелёный цвет"></button><button type="button" data-color="#9a65a9" aria-label="Фиолетовый цвет"></button><button type="button" data-color="#f5f0dd" aria-label="Светлый цвет"></button></div><label>Кисть <input id="draw-size" type="range" min="4" max="28" value="11"></label><button id="draw-clear" class="button button-quiet">Очистить</button></div>
+          <form id="draw-guess-form" class="draw-guess"><input id="draw-guess" maxlength="60" placeholder="Напиши свою догадку…" autocomplete="off"><button class="button button-primary" type="submit">Отправить</button></form>
+        </div>
+        <aside class="draw-side card"><div class="panel-title"><span>ИГРОКИ</span><span id="draw-player-count">0</span></div><ol id="draw-scores" class="players-list"></ol><div class="draw-chat-title">ЧАТ И ДОГАДКИ</div><div id="draw-chat" class="draw-chat" aria-live="polite"></div></aside>
       </section>
       <div class="dashboard hidden" id="dashboard">
         <aside class="players-panel card"><div class="panel-title"><span>ЗА СТОЛОМ</span><span id="player-count">1 / 20</span></div><div id="settings-summary" class="settings-summary"></div><ol id="players-list" class="players-list"></ol><div class="your-resources"><span>СВОБОДНО ФЛАЖКОВ</span><strong><span id="flags-left">17</span><small> / <b id="flag-cap">17</b></small></strong><p>Можно поставить до лимита личных флажков. Снял свой — место освободилось. Мины откроются в конце.</p></div><div class="legend"><span><i class="legend-mine"></i> мина (в конце)</span><span><i class="legend-flag">⚑</i> цветная метка игрока</span></div></aside>

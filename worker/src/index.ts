@@ -7,10 +7,23 @@ const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#
 
 interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number }
+type GameMode = "sapper" | "draw";
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
 interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean }
-interface Game { config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; event: { kind: string; name: string; id: string } | null }
+interface Stroke { color: string; size: number; points: { x: number; y: number }[] }
+interface ChatLine { id: string; kind: "chat" | "system"; name: string; text: string; at: number }
+interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
+interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
+
+const DRAW_WORDS = ["берёза", "фонарь", "гриб", "лягушка", "самокат", "космонавт", "чайник", "бабочка", "рюкзак", "радуга", "ёж", "паровоз", "черепаха", "пицца", "медведь", "снеговик", "подводная лодка", "велосипед", "акула", "парусник", "арбуз", "сова", "компас", "паутина", "корона", "робот", "замок", "ракета", "крокодил", "мороженое", "гитара", "улитка", "пират", "облако", "подсолнух", "дракон", "зонт", "скрипка", "сапог", "пингвин", "костёр", "маяк", "пчела", "дуб", "ведро", "петух", "лестница", "сани", "дельфин", "сюрприз"];
+function normalizeWord(value: unknown): string { return String(value ?? "").toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, ""); }
+function makeHint(word: string, elapsed: number): string {
+  const chars = [...word], letters = chars.map((char, index) => char === " " ? -1 : index).filter(index => index >= 0);
+  const reveal = Math.min(letters.length - 1, Math.floor(elapsed / 20));
+  const shown = new Set(Array.from({ length: Math.max(0, reveal) }, (_, n) => letters[Math.floor((n + 1) * letters.length / (reveal + 1))]));
+  return chars.map((char, index) => char === " " ? "   " : shown.has(index) ? char : "_ ").join("");
+}
 
 function neighbours(i: number, config: GameConfig): number[] {
   const x = i % config.width, y = Math.floor(i / config.width), result: number[] = [];
@@ -46,13 +59,20 @@ function safeConfig(value: unknown): GameConfig {
   const flags = Math.max(1, Math.min(total, Math.round(Number(candidate.flags) || DEFAULT_CONFIG.flags)));
   return { width, height, mines, flags };
 }
-function freshGame(): Game { return { config: null, cells: [], players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null }; }
+function freshGame(mode: GameMode = "sapper"): Game { return { mode, config: null, cells: [], players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null, chat: [] }; }
 function stripSecrets(game: Game, me: Player) {
+  const drawing = game.drawing;
+  const publicDrawing = drawing ? {
+    round: drawing.round, roundsTotal: drawing.roundsTotal, drawerId: drawing.drawerId,
+    word: drawing.drawerId === me.id || game.phase === "over" ? drawing.word : "",
+    hint: makeHint(drawing.word, Math.max(0, (Date.now() - drawing.startedAt) / 1000)),
+    startedAt: drawing.startedAt, endsAt: drawing.endsAt, strokes: drawing.strokes, guessedPlayers: drawing.guessedPlayers,
+  } : null;
   return {
-    type: "state", room: "", me: me.id,
+    type: "state", room: "", me: me.id, mode: game.mode ?? "sapper",
     cells: game.cells.map(c => c.open || game.over ? { open: true, mine: c.mine, near: c.near, boom: c.boom, by: c.by } : { open: false }),
-    players: game.players.map(({ id, name, score, explosions, color, flags, online }) => ({ id, name, score: game.over ? score : 0, explosions, color, flags, online })),
-    config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, winnerId: game.winnerId ?? "", event: game.event,
+    players: game.players.map(({ id, name, score, explosions, color, flags, online }) => ({ id, name, score: game.mode === "draw" || game.over ? score : 0, explosions, color, flags, online })),
+    drawing: publicDrawing, chat: game.chat ?? [], config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, winnerId: game.winnerId ?? "", event: game.event,
   };
 }
 
@@ -81,6 +101,8 @@ export class GameRoom extends DurableObject<Env> {
     this.init = ctx.blockConcurrencyWhile(async () => {
       this.game = await ctx.storage.get<Game>("game") ?? null;
       if (this.game) {
+        this.game.mode ??= "sapper";
+        this.game.chat ??= [];
         if (!this.game.config && this.game.cells.length) this.game.config = { ...DEFAULT_CONFIG };
         this.game.phase ??= this.game.over ? "over" : "playing";
         this.game.hostId ??= this.game.players[0]?.id ?? "";
@@ -117,7 +139,7 @@ export class GameRoom extends DurableObject<Env> {
   webSocketMessage(socket: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     return this.serialize(async () => {
       await this.init;
-      if (typeof raw !== "string" || raw.length > 2000) return;
+      if (typeof raw !== "string" || raw.length > 12000) return;
       let packet: Record<string, unknown>; try { packet = JSON.parse(raw); } catch { return; }
       const attachment = socket.deserializeAttachment() as Identity | null;
       if (packet.type === "join") { await this.join(socket, packet); return; }
@@ -125,11 +147,13 @@ export class GameRoom extends DurableObject<Env> {
       if (!attachment?.id || !this.game.players.some(p => p.id === attachment.id)) return;
       if (packet.type === "start") {
         if (this.game.phase !== "lobby" || this.game.hostId !== attachment.id) return;
+        if ((this.game.mode ?? "sapper") === "draw") { await this.startDrawing(socket, attachment.id); return; }
         const config = safeConfig(packet.config);
         this.game.config = config; this.game.cells = randomBoard(config); this.game.safe = 0;
         this.game.phase = "playing"; this.game.winnerId = ""; this.game.event = { kind: "started", name: String(config.flags), id: attachment.id };
         await this.publish(); return;
       }
+      if ((this.game.mode ?? "sapper") === "draw") { await this.handleDrawPacket(socket, attachment.id, packet); return; }
       if (packet.type !== "open" && packet.type !== "flag") return;
       const index = Number(packet.index);
       if (!Number.isInteger(index) || index < 0 || index >= this.game.cells.length || this.game.phase !== "playing" || this.game.over) return;
@@ -163,13 +187,103 @@ export class GameRoom extends DurableObject<Env> {
     });
   }
 
+  private addDrawChat(kind: "chat" | "system", name: string, text: string) {
+    if (!this.game) return;
+    this.game.chat ??= [];
+    this.game.chat.push({ id: crypto.randomUUID(), kind, name, text: text.slice(0, 160), at: Date.now() });
+    if (this.game.chat.length > 50) this.game.chat.splice(0, this.game.chat.length - 50);
+  }
+
+  private async startDrawing(socket: WebSocket, hostId: string) {
+    if (!this.game) return;
+    const turnOrder = this.game.players.filter(player => player.online).map(player => player.id);
+    if (turnOrder.length < 2) { socket.send(JSON.stringify({ type: "notice", text: "Для рисовальной игры нужны хотя бы два игрока." })); return; }
+    for (const player of this.game.players) player.score = 0;
+    this.game.drawing = { round: 0, roundsTotal: turnOrder.length, drawerId: "", word: "", turnOrder, startedAt: 0, endsAt: 0, strokes: [], guessedPlayers: [] };
+    this.game.phase = "playing"; this.game.over = false; this.game.event = null; this.game.chat = [];
+    const host = this.game.players.find(player => player.id === hostId);
+    this.addDrawChat("system", "Комната", `${host?.name ?? "Ведущий"} запустил рисовальную игру.`);
+    await this.beginDrawRound(1);
+  }
+
+  private async beginDrawRound(round: number) {
+    if (!this.game?.drawing) return;
+    const drawing = this.game.drawing;
+    let nextRound = round;
+    while (nextRound <= drawing.roundsTotal && !this.game.players.some(player => player.id === drawing.turnOrder[nextRound - 1] && player.online)) nextRound++;
+    if (nextRound > drawing.roundsTotal) {
+      this.game.phase = "over"; this.game.over = true; drawing.endsAt = 0;
+      this.addDrawChat("system", "Комната", "Все раунды завершены. Итоги — в списке игроков.");
+      this.game.event = { kind: "drawFinished", name: "", id: "" };
+      await this.ctx.storage.deleteAlarm(); await this.publish(); return;
+    }
+    const drawerId = drawing.turnOrder[nextRound - 1];
+    const drawer = this.game.players.find(player => player.id === drawerId)!;
+    drawing.round = nextRound; drawing.drawerId = drawerId; drawing.word = DRAW_WORDS[crypto.getRandomValues(new Uint32Array(1))[0] % DRAW_WORDS.length];
+    drawing.startedAt = Date.now(); drawing.endsAt = drawing.startedAt + 60_000; drawing.strokes = []; drawing.guessedPlayers = [];
+    this.game.event = { kind: "drawRound", name: drawer.name, id: drawerId };
+    this.addDrawChat("system", "Комната", `Раунд ${drawing.round}/${drawing.roundsTotal}: рисует ${drawer.name}.`);
+    await this.ctx.storage.setAlarm(Math.min(drawing.endsAt, drawing.startedAt + 20_000)); await this.publish();
+  }
+
+  private async endDrawRound() {
+    if (!this.game?.drawing || this.game.phase !== "playing") return;
+    const drawing = this.game.drawing;
+    this.addDrawChat("system", "Слово", drawing.word);
+    await this.beginDrawRound(drawing.round + 1);
+  }
+
+  private async handleDrawPacket(socket: WebSocket, playerId: string, packet: Record<string, unknown>) {
+    if (!this.game || this.game.phase !== "playing" || this.game.over || !this.game.drawing) return;
+    const drawing = this.game.drawing, player = this.game.players.find(item => item.id === playerId);
+    if (!player) return;
+    this.game.event = null;
+    if (packet.type === "stroke" || packet.type === "clear") {
+      if (drawing.drawerId !== playerId) return;
+      if (packet.type === "clear") drawing.strokes = [];
+      else {
+        const input = packet.stroke as Partial<Stroke> | null;
+        if (!input || !Array.isArray(input.points) || input.points.length < 2 || input.points.length > 100 || drawing.strokes.length >= 800) return;
+        const color = typeof input.color === "string" && /^#[0-9a-f]{6}$/i.test(input.color) ? input.color : "#17201c";
+        const size = Math.min(0.06, Math.max(0.003, Number(input.size) || 0.012));
+        const points = input.points.filter(point => point && typeof point === "object").map(point => ({ x: Math.min(1, Math.max(0, Number(point.x) || 0)), y: Math.min(1, Math.max(0, Number(point.y) || 0)) }));
+        if (points.length < 2) return;
+        drawing.strokes.push({ color, size, points });
+      }
+      await this.publish(); return;
+    }
+    if (packet.type === "guess" || packet.type === "chat") {
+      const text = String(packet.text ?? "").replace(/[<>\u0000-\u001f]/g, " ").trim().slice(0, 60);
+      if (!text) return;
+      if (packet.type === "guess" && playerId !== drawing.drawerId && !drawing.guessedPlayers.includes(playerId) && normalizeWord(text) === normalizeWord(drawing.word)) {
+        const position = drawing.guessedPlayers.length;
+        const points = Math.max(25, 100 - position * 15 - Math.floor((Date.now() - drawing.startedAt) / 1500));
+        player.score += points;
+        const drawer = this.game.players.find(item => item.id === drawing.drawerId);
+        if (drawer) drawer.score += Math.ceil(points / 2);
+        drawing.guessedPlayers.push(playerId);
+        this.addDrawChat("system", "Угадал", `${player.name} угадал слово! +${points}`);
+        const guessers = this.game.players.filter(item => item.online && item.id !== drawing.drawerId);
+        if (guessers.length && guessers.every(item => drawing.guessedPlayers.includes(item.id))) { await this.endDrawRound(); return; }
+      } else {
+        this.addDrawChat("chat", player.name, text);
+      }
+      await this.publish(); return;
+    }
+  }
+
   private async join(socket: WebSocket, packet: Record<string, unknown>) {
+    const requestedMode: GameMode = packet.mode === "draw" ? "draw" : "sapper";
     if (!this.game && packet.create !== true) {
       socket.send(JSON.stringify({ type: "error", message: "Комната не найдена. Проверь код или создай новую." }));
       socket.close(1008, "room not found");
       return;
     }
-    if (!this.game) this.game = freshGame();
+    if (!this.game) this.game = freshGame(requestedMode);
+    else if ((this.game.mode ?? "sapper") !== requestedMode) {
+      socket.send(JSON.stringify({ type: "error", message: "Это комната другой игры. Переключись стрелкой и попробуй снова." }));
+      socket.close(1008, "wrong game mode"); return;
+    }
     const id = /^[\w-]{8,64}$/.test(String(packet.id ?? "")) ? String(packet.id) : crypto.randomUUID();
     const token = /^[\w-]{16,100}$/.test(String(packet.token ?? "")) ? String(packet.token) : "";
     const name = safeName(packet.name);
@@ -187,7 +301,8 @@ export class GameRoom extends DurableObject<Env> {
       player.name = name; player.online = true; player.flags ??= []; player.explosions ??= 0; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (!this.game.over) player.score = 0;
     }
     socket.serializeAttachment({ id, name } satisfies Identity);
-    await this.publish();
+    if (this.game.mode === "draw" && this.game.phase === "playing" && this.game.drawing && this.game.drawing.endsAt <= Date.now()) await this.endDrawRound();
+    else await this.publish();
   }
 
   private finishIfDone() {
@@ -220,14 +335,24 @@ export class GameRoom extends DurableObject<Env> {
     if (!this.game || !identity?.id) return;
     const player = this.game.players.find(p => p.id === identity.id);
     if (player) player.online = false;
+    const wasDrawer = this.game.mode === "draw" && this.game.phase === "playing" && this.game.drawing?.drawerId === identity.id;
     if (this.game.phase === "lobby" && this.game.hostId === identity.id) this.game.hostId = this.game.players.find(p => p.online)?.id ?? identity.id;
     if (this.ctx.getWebSockets().filter(ws => ws.readyState === WebSocket.OPEN).length === 0) await this.ctx.storage.setAlarm(Date.now() + 6 * 60 * 60 * 1000);
-    await this.publish();
+    if (wasDrawer && this.ctx.getWebSockets().some(ws => ws.readyState === WebSocket.OPEN)) await this.endDrawRound();
+    else await this.publish();
   }
 
-  async alarm() {
-    if (this.ctx.getWebSockets().some(ws => ws.readyState === WebSocket.OPEN)) return;
-    this.game = null;
-    await this.ctx.storage.deleteAll();
+  alarm(): Promise<void> {
+    return this.serialize(async () => {
+      if (!this.ctx.getWebSockets().some(ws => ws.readyState === WebSocket.OPEN)) { this.game = null; await this.ctx.storage.deleteAll(); return; }
+      if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) {
+        const drawing = this.game.drawing, now = Date.now();
+        if (drawing.endsAt <= now) await this.endDrawRound();
+        else {
+          const elapsed = now - drawing.startedAt, nextReveal = elapsed < 20_000 ? drawing.startedAt + 20_000 : elapsed < 40_000 ? drawing.startedAt + 40_000 : drawing.endsAt;
+          await this.ctx.storage.setAlarm(Math.min(drawing.endsAt, nextReveal)); await this.publish();
+        }
+      }
+    });
   }
 }
