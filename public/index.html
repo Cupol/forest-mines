@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101817">
-  <meta name="description" content="Лесная сфера — сапёр и комнатная рисовальная игра для друзей">
-  <title>Лесная сфера — игры для друзей</title>
-  <link rel="stylesheet" href="style.css?v=forest-drawing-1">
+  <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
+  <title>Круг друзей — игры вместе</title>
+  <link rel="stylesheet" href="style.css?v=drawing-tools-2">
   <script src="config.js"></script>
-  <script src="app.js?v=forest-drawing-1" defer></script>
+  <script src="app.js?v=drawing-tools-2" defer></script>
 </head>
-<body>
+<body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
   <main class="shell">
     <header class="topbar">
-      <a class="brand" href="./" aria-label="На главную"><span class="brand-icon">✦</span><span>ЛЕСНАЯ СФЕРА<small>КОМНАТА НАСТОЛЬНЫХ ИГР</small></span></a>
+      <a class="brand" href="./" aria-label="На главную"><span class="brand-icon">✦</span><span>КРУГ ДРУЗЕЙ<small>ИГРАЕМ ВМЕСТЕ</small></span></a>
       <div class="online-pill"><i></i><span id="connection-label">ОДИНОЧНЫЙ РЕЖИМ</span></div>
     </header>
 
@@ -22,26 +22,26 @@
       <div class="intro">
         <div class="game-switch" aria-label="Переключение игр"><button id="game-prev" class="icon-button" aria-label="Предыдущая игра">←</button><span id="game-index">ИГРА 1 / 2</span><button id="game-next" class="icon-button" aria-label="Следующая игра">→</button></div>
         <span class="eyebrow" id="hero-eyebrow">ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.</span>
-        <h1 id="hero-title">Лесной<br><em>сапёр</em></h1>
+        <h1 id="hero-title"><em>Сапёр</em></h1>
         <p id="hero-description">Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.</p>
         <div class="rules-strip" id="hero-rules"><span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span></div>
       </div>
       <section class="lobby card">
-        <div class="card-heading"><span class="eyebrow">СТАРАЯ ЛЕСНАЯ СТОЛОВАЯ</span><span class="seal">01 / 03</span></div>
+        <div class="card-heading"><span class="eyebrow">СОБЕРИ СВОЮ КОМПАНИЮ</span><span class="seal">НАЧНИ ЗДЕСЬ</span></div>
         <label class="field-label" for="player-name">ТВОЁ ИМЯ</label>
-        <input id="player-name" maxlength="20" placeholder="Смотритель" autocomplete="nickname">
+        <input id="player-name" maxlength="20" placeholder="Игрок" autocomplete="nickname">
         <button id="create-room" class="button button-primary"><span id="create-room-text">Создать комнату</span><span>↗</span></button>
         <div class="divider"><span>или присоединиться</span></div>
         <div class="join-line"><input id="room-code" maxlength="6" placeholder="КОД КОМНАТЫ" aria-label="Код комнаты"><button id="join-room" class="button button-quiet" aria-label="Войти по коду">Войти <span>→</span></button></div>
-        <button id="solo-start" class="text-button">Остаться и сыграть с лесным духом <span>→</span></button>
+        <button id="solo-start" class="text-button">Сыграть с ботом <span>→</span></button>
         <p class="lobby-error" id="lobby-error" role="alert"></p>
       </section>
-      <div class="bottom-note"><span>ПОЛЕ ОТ 8 × 8 ДО 30 × 30</span><span>НАСТРОЙКИ В ЛОББИ</span><span>ДО 20 ИГРОКОВ</span></div>
+      <div class="bottom-note"><span>ИГРАЙТЕ ВМЕСТЕ</span><span>КОМНАТА ПО ССЫЛКЕ</span><span>ДО 20 ИГРОКОВ</span></div>
     </section>
 
     <section class="game hidden" id="game">
       <header class="game-head card">
-        <div class="game-title"><div class="eyebrow">СТОЛОВАЯ · КОМНАТА <span id="room-label">#----</span></div><h2 id="game-heading">Ожидаем игроков</h2></div>
+        <div class="game-title"><div class="eyebrow">КОМНАТА <span id="room-label">#----</span></div><h2 id="game-heading">Ожидаем игроков</h2></div>
         <div class="head-actions"><button id="copy-link" class="button button-quiet">Пригласить ↗</button><button id="leave-room" class="icon-button" aria-label="Вернуться в меню">×</button></div>
       </header>
       <section id="room-setup" class="room-setup hidden">
@@ -73,7 +73,7 @@
           <div id="draw-host-settings">
             <div class="card-heading"><span class="eyebrow">КОМНАТА РИСОВАНИЯ</span><span class="seal">НАСТРОЙКИ ХОСТА</span></div>
             <p class="setup-description">Когда соберутся игроки, запусти игру. По очереди каждый нарисует слово, а остальные постараются угадать его быстрее.</p>
-            <div class="drawing-rules"><span>✎ Один художник за раунд</span><span>⌛ 60 секунд на слово</span><span>★ Очки за скорость</span></div>
+            <div class="drawing-rules"><span>✎ Два слова на выбор</span><span>⌛ 60 секунд на рисунок</span><span>✦ Подсказка от художника</span></div>
             <button id="start-drawing" class="button button-primary create-board">Начать рисовальную игру <span>↗</span></button>
             <p id="draw-lobby-error" class="lobby-error" role="alert"></p>
           </div>
@@ -83,9 +83,21 @@
       </section>
       <section id="draw-dashboard" class="draw-layout hidden">
         <div class="draw-main card">
-          <div class="draw-toolbar"><div><span class="eyebrow" id="draw-round-label">РАУНД 1 / 4</span><strong id="draw-clock">01:00</strong></div><div id="draw-word" class="draw-word">Ждём ход…</div><div id="draw-turn-label" class="eyebrow">ХУДОЖНИК</div></div>
-          <canvas id="draw-canvas" width="900" height="540" aria-label="Холст для рисования"></canvas>
-          <div id="draw-tools" class="draw-tools hidden"><div class="draw-colors"><button type="button" data-color="#17201c" aria-label="Тёмный цвет"></button><button type="button" data-color="#d54e43" aria-label="Красный цвет"></button><button type="button" data-color="#397cb2" aria-label="Синий цвет"></button><button type="button" data-color="#e2b342" aria-label="Жёлтый цвет"></button><button type="button" data-color="#57905c" aria-label="Зелёный цвет"></button><button type="button" data-color="#9a65a9" aria-label="Фиолетовый цвет"></button><button type="button" data-color="#f5f0dd" aria-label="Светлый цвет"></button></div><label>Кисть <input id="draw-size" type="range" min="4" max="28" value="11"></label><button id="draw-clear" class="button button-quiet">Очистить</button></div>
+          <div class="draw-toolbar"><div><span class="eyebrow" id="draw-round-label">РАУНД 1 / 4</span><strong id="draw-clock" class="draw-clock">01:00</strong></div><div id="draw-word" class="draw-word">Ждём ход…</div><div id="draw-turn-label" class="eyebrow">ХУДОЖНИК</div></div>
+          <div class="draw-canvas-wrap">
+            <canvas id="draw-canvas" class="draw-canvas" width="900" height="540" aria-label="Холст для рисования"></canvas>
+            <div id="draw-word-choice" class="draw-word-choice hidden" role="group" aria-labelledby="draw-choice-title">
+              <div class="word-choice-card"><span class="eyebrow">ТВОЙ ХОД</span><h3 id="draw-choice-title">Что нарисуешь?</h3><p>Выбери одно из двух слов. Их видишь только ты.</p><div class="word-choice-buttons"><button id="draw-choice-0" class="button" type="button">Первое слово</button><button id="draw-choice-1" class="button" type="button">Второе слово</button></div><small>На выбор — 15 секунд. Потом начнётся минута рисования.</small></div>
+            </div>
+          </div>
+          <div id="draw-tools" class="draw-tools hidden">
+            <div class="draw-tool-picker" role="group" aria-label="Инструмент"><button type="button" class="button selected" data-draw-tool="pen" aria-pressed="true">✎ Кисть</button><button type="button" class="button" data-draw-tool="line" aria-pressed="false">╱ Линия</button><button type="button" class="button" data-draw-tool="eraser" aria-pressed="false">▱ Ластик</button></div>
+            <div class="draw-colors" role="group" aria-label="Цвет"><button type="button" data-color="#17201c" aria-label="Тёмный цвет"></button><button type="button" data-color="#d54e43" aria-label="Красный цвет"></button><button type="button" data-color="#397cb2" aria-label="Синий цвет"></button><button type="button" data-color="#e2b342" aria-label="Жёлтый цвет"></button><button type="button" data-color="#57905c" aria-label="Зелёный цвет"></button><button type="button" data-color="#9a65a9" aria-label="Фиолетовый цвет"></button><button type="button" data-color="#f5f0dd" aria-label="Светлый цвет"></button></div>
+            <label>Размер <input id="draw-size" type="range" min="4" max="60" value="11"></label>
+            <label>Непрозрачность <input id="draw-opacity" type="range" min="10" max="100" step="10" value="100"><output id="draw-opacity-value" for="draw-opacity">100%</output></label>
+            <button id="draw-clear" class="button button-quiet" type="button">Очистить</button>
+            <div class="draw-assistance"><button id="draw-hint" class="button" type="button">✦ Дать подсказку</button><span id="draw-hint-count" role="status">Открыть одну букву остальным игрокам</span></div>
+          </div>
           <form id="draw-guess-form" class="draw-guess"><input id="draw-guess" maxlength="60" placeholder="Напиши свою догадку…" autocomplete="off"><button class="button button-primary" type="submit">Отправить</button></form>
         </div>
         <aside class="draw-side card"><div class="panel-title"><span>ИГРОКИ</span><span id="draw-player-count">0</span></div><ol id="draw-scores" class="players-list"></ol><div class="draw-chat-title">ЧАТ И ДОГАДКИ</div><div id="draw-chat" class="draw-chat" aria-live="polite"></div></aside>
@@ -103,7 +115,7 @@
     </section>
     <div id="winner-overlay" class="winner-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="winner-title">
       <section class="winner-card card">
-        <span class="eyebrow">ИТОГИ ЛЕСНОЙ ПАРТИИ</span>
+        <span class="eyebrow">ИТОГИ ПАРТИИ</span>
         <div class="winner-seal" aria-hidden="true">✦</div>
         <h2 id="winner-title">Победитель</h2>
         <p id="winner-message"></p>

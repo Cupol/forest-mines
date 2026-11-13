@@ -22,18 +22,35 @@
 
   let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, flagLimitCustom = false, roomId = "", myId = "", myToken = "", toastTimer = 0, winnerDismissed = false, drawingColor = "#17201c", activeStroke = null, drawClockTimer = 0;
   function showError(message) { ui.error.textContent = message; }
+  let drawingTool = "pen", activeStrokeRound = 0, activePointerId = null;
   function applySelectedMode() {
     const drawing = selectedMode === "draw";
-    document.title = drawing ? "Лесная рисовалка — Лесная сфера" : "Лесной сапёр — Лесная сфера";
+    document.body.dataset.game = selectedMode;
+    document.title = drawing ? "Рисуй и угадывай — Круг друзей" : "Сапёр — Круг друзей";
     $("game-index").textContent = drawing ? "ИГРА 2 / 2" : "ИГРА 1 / 2";
     $("hero-eyebrow").textContent = drawing ? "СЛОВО ЗАДАНО. ТВОЯ ОЧЕРЕДЬ РИСОВАТЬ." : "ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.";
-    $("hero-title").innerHTML = drawing ? "Лесная<br><em>рисовалка</em>" : "Лесной<br><em>сапёр</em>";
+    $("hero-title").innerHTML = drawing ? "Рисуй и<br><em>угадывай</em>" : "<em>Сапёр</em>";
     $("hero-description").textContent = drawing ? "Рисуй загаданное слово, пока друзья угадывают. Очки получают самые быстрые догадчики." : "Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.";
     $("hero-rules").innerHTML = drawing ? "<span><b>✎</b> рисуй по очереди</span><span><b>⌛</b> угадай за минуту</span><span><b>★</b> очки за скорость</span>" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
     $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
-    $("solo-start").textContent = drawing ? "Порисовать одному (практика) →" : "Остаться и сыграть с лесным духом →";
+    $("solo-start").textContent = drawing ? "Порисовать одному (практика) →" : "Сыграть с ботом →";
   }
-  function changeGame() { selectedMode = selectedMode === "sapper" ? "draw" : "sapper"; ui.roomInput.value = ""; applySelectedMode(); history.replaceState({}, "", `${location.pathname}?game=${selectedMode}`); }
+  let switchingGame = false;
+  async function changeGame() {
+    if (switchingGame || $("create-room").disabled) return;
+    switchingGame = true;
+    const buttons = [$("game-prev"), $("game-next"), $("create-room"), $("join-room"), $("solo-start")];
+    buttons.forEach(button => button.disabled = true);
+    const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 200;
+    ui.landing.classList.add("game-switching");
+    await new Promise(resolve => setTimeout(resolve, delay));
+    selectedMode = selectedMode === "sapper" ? "draw" : "sapper";
+    ui.roomInput.value = ""; showError(""); applySelectedMode();
+    history.replaceState({}, "", `${location.pathname}?game=${selectedMode}`);
+    ui.landing.classList.remove("game-switching");
+    await new Promise(resolve => setTimeout(resolve, delay));
+    buttons.forEach(button => button.disabled = false); switchingGame = false;
+  }
   function notify(message) { ui.toast.textContent = message; ui.toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 2600); }
   function setStatus(message, mood = "") { ui.status.lastElementChild.textContent = message; ui.status.classList.toggle("hit", mood === "hit"); ui.status.classList.toggle("found", mood === "found"); }
   function newId() { return crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`; }
@@ -68,9 +85,10 @@
   function startView(id, mode, config) {
     roomId = id; solo = mode === "solo"; myId = "local-player";
     game = { mode: "sapper", config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, explosions: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false, winnerId: "" };
-    showGame(mode); draw(); setStatus(solo ? "Лесной дух вышел на тропу. Найди его следы." : "Комната создана. Позови остальных за стол.");
+    showGame(mode); draw(); setStatus(solo ? "Партия с ботом началась." : "Комната создана. Позови остальных за стол.");
   }
   function showGame(mode) {
+    document.body.dataset.game = selectedMode;
     ui.landing.classList.add("hidden"); ui.game.classList.remove("hidden");
     ui.connection.textContent = mode === "solo" ? "ОДИНОЧНЫЙ РЕЖИМ · БОТ" : mode === "online" ? "В СЕТИ · LIVE" : mode === "draw" ? "ПРАКТИКА РИСОВАНИЯ" : "КОМНАТА ГОТОВА";
     ui.room.textContent = "#" + roomId; ui.shareCode.textContent = roomId; history.replaceState({}, "", `?room=${encodeURIComponent(roomId)}&game=${selectedMode}`);
@@ -103,7 +121,7 @@
     const name = cleanName(); if (!name) return;
     if (makeNew) flagLimitCustom = false;
     const api = apiAddress();
-    if (!api) { showError("Сервер комнаты ещё не подключён. Пока можно сыграть одному против лесного духа."); return; }
+    if (!api) { showError("Сервер комнаты ещё не подключён. Пока доступна одиночная игра."); return; }
     roomId = code;
     myId = localStorage.getItem(`forest-mines-player:${roomId}`) || newId();
     myToken = localStorage.getItem(`forest-mines-token:${roomId}`) || `${newId()}${newId()}`;
@@ -124,10 +142,11 @@
       if (message.type === "state") {
         selectedMode = message.mode === "draw" ? "draw" : "sapper";
         game = { mode: selectedMode, cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "", drawing: message.drawing, chat: message.chat || [] };
-        if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${message.room}`, myToken); }
-        myId = message.me; roomId = message.room; ui.error.textContent = ""; showGame("online"); draw();
+        roomId = message.room || roomId;
+        if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${roomId}`, myToken); }
+        myId = message.me; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
-        else if (game.over) showWinner();
+        else if (game.over && game.mode !== "draw") showWinner();
         if (game.phase === "lobby" && game.mode !== "draw") setStatus(game.hostId === myId ? "Комната открыта. Друзья могут присоединяться; выбери поле, когда будете готовы." : "Ты в лобби. Ждём, пока ведущий создаст поле.");
       }
     });
@@ -136,6 +155,7 @@
   }
   function teardown(returnToMenu = true) {
     clearTimeout(botTimer); clearInterval(drawClockTimer); drawClockTimer = 0;
+    activeStroke = null;
     if (socket) { socket.close(); socket = null; }
     game = null; solo = false; roomId = ""; flagMode = false; ui.flagMode.setAttribute("aria-pressed", "false");
     ui.winnerOverlay.classList.add("hidden"); winnerDismissed = false;
@@ -219,7 +239,7 @@
     ui.roomSetup.classList.add("hidden"); ui.dashboard.classList.add("hidden");
     ui.drawLobby.classList.toggle("hidden", game.phase !== "lobby");
     ui.drawDashboard.classList.toggle("hidden", game.phase === "lobby");
-    ui.heading.textContent = game.phase === "lobby" ? "Комната рисования · ждём игроков" : game.phase === "over" ? "Итоги рисовальной игры" : "Лесная рисовалка";
+    ui.heading.textContent = game.phase === "lobby" ? "Комната рисования · ждём игроков" : game.phase === "over" ? "Итоги игры" : "Рисуй и угадывай";
     ui.copyLink.disabled = game.phase !== "lobby"; ui.copyLink.textContent = game.phase === "lobby" ? "Пригласить ↗" : "Набор закрыт";
     const playersOnline = game.players.filter(player => player.online !== false);
     if (game.phase === "lobby") {
@@ -237,12 +257,24 @@
     }
     const drawing = game.drawing;
     if (!drawing) return;
+    const choosing = drawing.stage === "choosing", isDrawer = drawing.drawerId === myId;
+    if (activeStroke && (activeStrokeRound !== drawing.round || !isDrawer || choosing || game.phase !== "playing")) activeStroke = null;
+    $("draw-word-choice").classList.toggle("hidden", !choosing || !isDrawer || game.phase !== "playing");
+    for (let index = 0; index < 2; index++) {
+      const button = $("draw-choice-" + index);
+      button.textContent = drawing.choices?.[index] || "…";
+      button.disabled = !choosing || !isDrawer || !drawing.choices?.[index];
+    }
     const drawer = game.players.find(player => player.id === drawing.drawerId);
     ui.drawRound.textContent = `РАУНД ${drawing.round} / ${drawing.roundsTotal}`;
-    ui.drawWord.innerHTML = game.phase === "over" ? `Слово: <strong>${escapeMarkup(drawing.word || "—")}</strong>` : drawing.drawerId === myId ? `ТВОЁ СЛОВО: <strong>${escapeMarkup(drawing.word)}</strong>` : drawing.guessedPlayers.includes(myId) ? "Верно! Ждём остальных" : `Что это? <strong>${escapeMarkup(drawing.hint || "_ _ _")}</strong>`;
+    ui.drawWord.innerHTML = game.phase === "over" ? `Слово: <strong>${escapeMarkup(drawing.word || "—")}</strong>` : choosing ? (isDrawer ? "Выбери слово для рисунка" : "Художник выбирает слово…") : isDrawer ? `ТВОЁ СЛОВО: <strong>${escapeMarkup(drawing.word)}</strong>` : drawing.guessedPlayers.includes(myId) ? "Верно! Ждём остальных" : `Что это? <strong>${escapeMarkup(drawing.hint || "_ _ _")}</strong>`;
     ui.drawTurn.textContent = game.phase === "over" ? "ИГРА ОКОНЧЕНА" : drawing.drawerId === myId ? "ТЫ РИСУЕШЬ" : `${drawer?.name ?? "Игрок"} РИСУЕТ`;
-    ui.drawTools.classList.toggle("hidden", drawing.drawerId !== myId || game.phase !== "playing");
-    const canGuess = game.phase === "playing" && drawing.drawerId !== myId && !drawing.guessedPlayers.includes(myId);
+    ui.drawTools.classList.toggle("hidden", !isDrawer || choosing || game.phase !== "playing");
+    $("draw-hint").classList.toggle("hidden", solo);
+    $("draw-hint-count").classList.toggle("hidden", solo);
+    $("draw-hint").disabled = choosing || !isDrawer || game.phase !== "playing" || (drawing.hintCount || 0) >= (drawing.maxHints || 0);
+    $("draw-hint-count").textContent = `Открыто букв: ${drawing.hintCount || 0} / ${drawing.maxHints || 0}`;
+    const canGuess = game.phase === "playing" && !choosing && !isDrawer && !drawing.guessedPlayers.includes(myId);
     ui.drawGuess.disabled = !canGuess; ui.drawGuess.placeholder = canGuess ? "Напиши свою догадку…" : drawing.drawerId === myId ? "Ты рисуешь — остальные угадывают" : "Ты угадал!";
     ui.drawGuessForm.querySelector("button").disabled = !canGuess;
     ui.drawPlayerCount.textContent = `${playersOnline.length}`;
@@ -254,28 +286,36 @@
     ui.drawChat.replaceChildren();
     for (const line of game.chat || []) { const message = document.createElement("p"); message.className = line.kind === "system" ? "system-message" : ""; if (line.kind === "chat") { const label = document.createElement("b"); label.className = "chat-name"; label.textContent = `${line.name}: `; message.append(label, document.createTextNode(line.text)); } else message.textContent = line.text; ui.drawChat.append(message); }
     ui.drawChat.scrollTop = ui.drawChat.scrollHeight;
-    renderDrawingCanvas(); updateDrawClock();
+    renderDrawingCanvas(activeStroke); updateDrawClock();
     if (game.phase === "playing" && drawing.endsAt) drawClockTimer = setInterval(updateDrawClock, 500);
     $("phase-hint").textContent = game.phase === "over" ? "ВСЕ РАУНДЫ ЗАВЕРШЕНЫ · ИТОГИ СПРАВА" : "РИСУЙ ИЛИ УГАДЫВАЙ · КАЖДЫЙ ИГРОК РИСУЕТ ОДИН РАЗ";
   }
   function escapeMarkup(value) { return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char])); }
   function renderDrawingCanvas(extra = null) {
     const canvas = ui.drawCanvas, context = canvas.getContext("2d");
-    context.fillStyle = "#f3efdf"; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.clearRect(0, 0, canvas.width, canvas.height);
     const strokes = [...(game?.drawing?.strokes || []), ...(extra ? [extra] : [])];
     for (const stroke of strokes) {
       if (!stroke.points?.length) continue;
+      context.save();
+      context.globalCompositeOperation = stroke.tool === "eraser" ? "destination-out" : "source-over";
+      context.globalAlpha = stroke.tool === "eraser" ? 1 : (stroke.opacity ?? 1);
       context.strokeStyle = stroke.color; context.lineWidth = Math.max(2, stroke.size * canvas.width); context.lineCap = "round"; context.lineJoin = "round";
+      if (stroke.points.length === 1 || stroke.points.every(point => point.x === stroke.points[0].x && point.y === stroke.points[0].y)) {
+        context.fillStyle = stroke.color; context.beginPath(); context.arc(stroke.points[0].x * canvas.width, stroke.points[0].y * canvas.height, context.lineWidth / 2, 0, Math.PI * 2); context.fill(); context.restore(); continue;
+      }
       context.beginPath(); context.moveTo(stroke.points[0].x * canvas.width, stroke.points[0].y * canvas.height);
-      for (let i = 1; i < stroke.points.length; i++) context.lineTo(stroke.points[i].x * canvas.width, stroke.points[i].y * canvas.height);
+      if (stroke.tool === "line") { const last = stroke.points.at(-1); context.lineTo(last.x * canvas.width, last.y * canvas.height); }
+      else for (let i = 1; i < stroke.points.length; i++) context.lineTo(stroke.points[i].x * canvas.width, stroke.points[i].y * canvas.height);
       context.stroke();
+      context.restore();
     }
   }
   function updateDrawClock() {
     const drawing = game?.drawing;
     if (!drawing || !drawing.endsAt) { ui.drawClock.textContent = solo ? "ПРАКТИКА" : "—"; return; }
     const seconds = Math.max(0, Math.ceil((drawing.endsAt - Date.now()) / 1000));
-    ui.drawClock.textContent = `0:${String(seconds).padStart(2, "0")}`;
+    ui.drawClock.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     ui.drawClock.classList.toggle("time-low", seconds <= 10);
   }
   function draw() {
@@ -392,7 +432,7 @@
   }
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   $("game-prev").addEventListener("click", changeGame); $("game-next").addEventListener("click", changeGame);
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
     const config = PRESETS[button.dataset.preset];
@@ -403,29 +443,54 @@
   $("flag-total").addEventListener("input", () => { flagLimitCustom = true; document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; });
   ui.createBoard.addEventListener("click", () => { const config = chosenSettings(true); if (socket && config && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start", config })); });
   $("start-drawing").addEventListener("click", () => { ui.drawLobbyError.textContent = ""; if (socket?.readyState === WebSocket.OPEN && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start" })); });
-  ui.drawGuessForm.addEventListener("submit", event => { event.preventDefault(); const text = ui.drawGuess.value.trim(); if (!text || !game || game.mode !== "draw") return; if (solo) { ui.drawGuess.value = ""; return; } if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "guess", text })); ui.drawGuess.value = ""; });
+  ui.drawGuessForm.addEventListener("submit", event => { event.preventDefault(); const text = ui.drawGuess.value.trim(); if (!text || !game || game.mode !== "draw") return; if (solo) { ui.drawGuess.value = ""; return; } if (socket?.readyState === WebSocket.OPEN) sendDrawingAction("guess", { text }); ui.drawGuess.value = ""; });
   document.querySelectorAll(".draw-colors button").forEach(button => { button.style.setProperty("--draw-color", button.dataset.color); button.addEventListener("click", () => { drawingColor = button.dataset.color; document.querySelectorAll(".draw-colors button").forEach(item => item.classList.toggle("selected", item === button)); }); });
-  $("draw-clear").addEventListener("click", () => { if (!game?.drawing || game.drawing.drawerId !== myId) return; if (solo) { game.drawing.strokes = []; renderDrawingCanvas(); } else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "clear" })); });
-  ui.drawCanvas.addEventListener("pointerdown", event => {
-    if (game?.mode !== "draw" || game.phase !== "playing" || game.drawing?.drawerId !== myId) return;
-    const rect = ui.drawCanvas.getBoundingClientRect(); ui.drawCanvas.setPointerCapture(event.pointerId);
-    activeStroke = { color: drawingColor, size: Number($("draw-size").value) / ui.drawCanvas.width, points: [{ x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height }] };
+  function canPaint() { return game?.mode === "draw" && game.phase === "playing" && game.drawing?.drawerId === myId && game.drawing.stage !== "choosing"; }
+  function sendDrawingAction(type, extra = {}) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, round: game?.drawing?.round, ...extra })); }
+  for (let index = 0; index < 2; index++) $("draw-choice-" + index).addEventListener("click", () => {
+    if (game?.drawing?.stage !== "choosing" || game.drawing.drawerId !== myId) return;
+    sendDrawingAction("chooseWord", { index });
   });
-  ui.drawCanvas.addEventListener("pointermove", event => {
-    if (!activeStroke) return;
-    const rect = ui.drawCanvas.getBoundingClientRect(), point = { x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)), y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)) }, previous = activeStroke.points.at(-1);
-    if (Math.hypot(point.x - previous.x, point.y - previous.y) < 0.003) return;
-    if (activeStroke.points.length < 100) activeStroke.points.push(point); else activeStroke.points[activeStroke.points.length - 1] = point;
+  $("draw-hint").addEventListener("click", () => { if (canPaint() && !solo) sendDrawingAction("hint"); });
+  $("draw-opacity").addEventListener("input", () => { $("draw-opacity-value").textContent = `${$("draw-opacity").value}%`; });
+  document.querySelectorAll("[data-draw-tool]").forEach(button => button.addEventListener("click", () => {
+    drawingTool = button.dataset.drawTool;
+    document.querySelectorAll("[data-draw-tool]").forEach(item => { item.classList.toggle("selected", item === button); item.setAttribute("aria-pressed", String(item === button)); });
+    $("draw-opacity").disabled = drawingTool === "eraser";
+    ui.drawCanvas.dataset.tool = drawingTool;
+  }));
+  $("draw-clear").addEventListener("click", () => { if (!canPaint()) return; activeStroke = null; if (solo) { game.drawing.strokes = []; renderDrawingCanvas(); } else sendDrawingAction("clear"); });
+  function canvasPoint(event) { const rect = ui.drawCanvas.getBoundingClientRect(); return { x: Math.round(Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) * 10000) / 10000, y: Math.round(Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)) * 10000) / 10000 }; }
+  ui.drawCanvas.addEventListener("pointerdown", event => {
+    if (!canPaint() || activeStroke || event.button !== 0 || !event.isPrimary) return;
+    event.preventDefault(); ui.drawCanvas.setPointerCapture(event.pointerId); activePointerId = event.pointerId; activeStrokeRound = game.drawing.round;
+    activeStroke = { tool: drawingTool, opacity: Number($("draw-opacity").value) / 100, color: drawingColor, size: Number($("draw-size").value) / ui.drawCanvas.width, points: [canvasPoint(event)] };
     renderDrawingCanvas(activeStroke);
   });
-  function finishStroke() {
-    if (!activeStroke || !game?.drawing) return;
-    if (activeStroke.points.length === 1) activeStroke.points.push({ ...activeStroke.points[0], x: Math.min(1, activeStroke.points[0].x + 0.002) });
-    if (solo) { game.drawing.strokes.push(activeStroke); renderDrawingCanvas(); }
-    else if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stroke", stroke: activeStroke }));
-    activeStroke = null;
+  function extendStroke(event, final = false) {
+    if (!activeStroke || event.pointerId !== activePointerId) return;
+    const point = canvasPoint(event), previous = activeStroke.points.at(-1);
+    if (activeStroke.tool === "line") activeStroke.points = [activeStroke.points[0], point];
+    else {
+      if (!final && Math.hypot(point.x - previous.x, point.y - previous.y) < 0.002) return;
+      if (activeStroke.points.length >= 100) activeStroke.points = activeStroke.points.filter((_, index) => index % 2 === 0);
+      activeStroke.points.push(point);
+    }
+    renderDrawingCanvas(activeStroke);
   }
-  ui.drawCanvas.addEventListener("pointerup", finishStroke); ui.drawCanvas.addEventListener("pointercancel", finishStroke);
+  ui.drawCanvas.addEventListener("pointermove", event => extendStroke(event));
+  function finishStroke(event) {
+    if (!activeStroke || event.pointerId !== activePointerId) return;
+    if (!canPaint() || activeStrokeRound !== game.drawing.round) { activeStroke = null; renderDrawingCanvas(); return; }
+    extendStroke(event, true);
+    if (activeStroke.points.length === 1) activeStroke.points.push({ ...activeStroke.points[0] });
+    if (solo) { game.drawing.strokes.push(activeStroke); renderDrawingCanvas(); }
+    else sendDrawingAction("stroke", { stroke: activeStroke });
+    activeStroke = null; activePointerId = null;
+  }
+  ui.drawCanvas.addEventListener("pointerup", finishStroke);
+  ui.drawCanvas.addEventListener("pointercancel", () => { activeStroke = null; activePointerId = null; renderDrawingCanvas(); });
+  ui.drawCanvas.addEventListener("contextmenu", event => event.preventDefault());
   $("winner-close").addEventListener("click", () => { winnerDismissed = true; ui.winnerOverlay.classList.add("hidden"); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   $("leave-room").addEventListener("click", () => teardown());

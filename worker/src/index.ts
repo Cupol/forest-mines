@@ -10,19 +10,24 @@ interface GameConfig { width: number; height: number; mines: number; flags: numb
 type GameMode = "sapper" | "draw";
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
 interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean }
-interface Stroke { color: string; size: number; points: { x: number; y: number }[] }
+interface Stroke { color: string; size: number; tool?: "pen" | "line" | "eraser"; opacity?: number; points: { x: number; y: number }[] }
 interface ChatLine { id: string; kind: "chat" | "system"; name: string; text: string; at: number }
-interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
+interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; stage: "choosing" | "drawing"; choices: string[]; revealedIndices: number[]; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
 interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
 const DRAW_WORDS = ["берёза", "фонарь", "гриб", "лягушка", "самокат", "космонавт", "чайник", "бабочка", "рюкзак", "радуга", "ёж", "паровоз", "черепаха", "пицца", "медведь", "снеговик", "подводная лодка", "велосипед", "акула", "парусник", "арбуз", "сова", "компас", "паутина", "корона", "робот", "замок", "ракета", "крокодил", "мороженое", "гитара", "улитка", "пират", "облако", "подсолнух", "дракон", "зонт", "скрипка", "сапог", "пингвин", "костёр", "маяк", "пчела", "дуб", "ведро", "петух", "лестница", "сани", "дельфин", "сюрприз"];
 function normalizeWord(value: unknown): string { return String(value ?? "").toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, ""); }
-function makeHint(word: string, elapsed: number): string {
-  const chars = [...word], letters = chars.map((char, index) => char === " " ? -1 : index).filter(index => index >= 0);
-  const reveal = Math.min(letters.length - 1, Math.floor(elapsed / 20));
-  const shown = new Set(Array.from({ length: Math.max(0, reveal) }, (_, n) => letters[Math.floor((n + 1) * letters.length / (reveal + 1))]));
-  return chars.map((char, index) => char === " " ? "   " : shown.has(index) ? char : "_ ").join("");
+function letterIndices(word: string): number[] { return [...word].map((char, index) => char === " " ? -1 : index).filter(index => index >= 0); }
+function maxHints(word: string): number { const count = letterIndices(word).length; return Math.max(0, Math.min(count - 1, Math.floor(count / 2))); }
+function makeHint(word: string, revealed: number[]): string {
+  const shown = new Set(revealed);
+  return [...word].map((char, index) => char === " " ? "   " : shown.has(index) ? char + " " : "_ ").join("");
+}
+function chooseWordPair(): string[] {
+  const first = crypto.getRandomValues(new Uint32Array(1))[0] % DRAW_WORDS.length;
+  const offset = 1 + crypto.getRandomValues(new Uint32Array(1))[0] % (DRAW_WORDS.length - 1);
+  return [DRAW_WORDS[first], DRAW_WORDS[(first + offset) % DRAW_WORDS.length]];
 }
 
 function neighbours(i: number, config: GameConfig): number[] {
@@ -65,7 +70,8 @@ function stripSecrets(game: Game, me: Player) {
   const publicDrawing = drawing ? {
     round: drawing.round, roundsTotal: drawing.roundsTotal, drawerId: drawing.drawerId,
     word: drawing.drawerId === me.id || game.phase === "over" ? drawing.word : "",
-    hint: makeHint(drawing.word, Math.max(0, (Date.now() - drawing.startedAt) / 1000)),
+    stage: drawing.stage, choices: drawing.stage === "choosing" && drawing.drawerId === me.id ? drawing.choices : [],
+    hint: makeHint(drawing.word, drawing.revealedIndices), hintCount: drawing.revealedIndices.length, maxHints: maxHints(drawing.word),
     startedAt: drawing.startedAt, endsAt: drawing.endsAt, strokes: drawing.strokes, guessedPlayers: drawing.guessedPlayers,
   } : null;
   return {
@@ -100,12 +106,18 @@ export class GameRoom extends DurableObject<Env> {
     super(ctx, env);
     this.init = ctx.blockConcurrencyWhile(async () => {
       this.game = await ctx.storage.get<Game>("game") ?? null;
+      this.roomCode = await ctx.storage.get<string>("roomCode") ?? "";
       if (this.game) {
         this.game.mode ??= "sapper";
         this.game.chat ??= [];
         if (!this.game.config && this.game.cells.length) this.game.config = { ...DEFAULT_CONFIG };
         this.game.phase ??= this.game.over ? "over" : "playing";
         this.game.hostId ??= this.game.players[0]?.id ?? "";
+        if (this.game.drawing) {
+          this.game.drawing.stage ??= "drawing";
+          this.game.drawing.choices ??= [];
+          this.game.drawing.revealedIndices ??= [];
+        }
         const occupiedFlags = new Set<number>();
         this.game.players.forEach((player, index) => {
           player.token ??= crypto.randomUUID(); player.color ??= PLAYER_COLORS[index % PLAYER_COLORS.length]; player.flags ??= []; player.score ??= 0; player.explosions ??= 0;
@@ -126,7 +138,9 @@ export class GameRoom extends DurableObject<Env> {
     this.roomCode = new URL(request.url).pathname.match(/^\/api\/room\/([A-Z0-9]{4,6})$/i)?.[1]?.toUpperCase() ?? "";
     return this.serialize(async () => {
       if (this.ctx.getWebSockets().filter(ws => ws.readyState === WebSocket.OPEN).length >= MAX_PLAYERS) return new Response("За столом уже 20 игроков.", { status: 429 });
-      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.put("roomCode", this.roomCode);
+      if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1, this.game.drawing.endsAt));
+      else await this.ctx.storage.deleteAlarm();
       const pair = new WebSocketPair();
       const client = pair[0], server = pair[1];
       this.ctx.acceptWebSocket(server);
@@ -199,7 +213,7 @@ export class GameRoom extends DurableObject<Env> {
     const turnOrder = this.game.players.filter(player => player.online).map(player => player.id);
     if (turnOrder.length < 2) { socket.send(JSON.stringify({ type: "notice", text: "Для рисовальной игры нужны хотя бы два игрока." })); return; }
     for (const player of this.game.players) player.score = 0;
-    this.game.drawing = { round: 0, roundsTotal: turnOrder.length, drawerId: "", word: "", turnOrder, startedAt: 0, endsAt: 0, strokes: [], guessedPlayers: [] };
+    this.game.drawing = { round: 0, roundsTotal: turnOrder.length, drawerId: "", word: "", stage: "choosing", choices: [], revealedIndices: [], turnOrder, startedAt: 0, endsAt: 0, strokes: [], guessedPlayers: [] };
     this.game.phase = "playing"; this.game.over = false; this.game.event = null; this.game.chat = [];
     const host = this.game.players.find(player => player.id === hostId);
     this.addDrawChat("system", "Комната", `${host?.name ?? "Ведущий"} запустил рисовальную игру.`);
@@ -212,32 +226,66 @@ export class GameRoom extends DurableObject<Env> {
     let nextRound = round;
     while (nextRound <= drawing.roundsTotal && !this.game.players.some(player => player.id === drawing.turnOrder[nextRound - 1] && player.online)) nextRound++;
     if (nextRound > drawing.roundsTotal) {
-      this.game.phase = "over"; this.game.over = true; drawing.endsAt = 0;
+      this.game.phase = "over"; this.game.over = true; drawing.endsAt = 0; drawing.choices = [];
       this.addDrawChat("system", "Комната", "Все раунды завершены. Итоги — в списке игроков.");
       this.game.event = { kind: "drawFinished", name: "", id: "" };
       await this.ctx.storage.deleteAlarm(); await this.publish(); return;
     }
     const drawerId = drawing.turnOrder[nextRound - 1];
     const drawer = this.game.players.find(player => player.id === drawerId)!;
-    drawing.round = nextRound; drawing.drawerId = drawerId; drawing.word = DRAW_WORDS[crypto.getRandomValues(new Uint32Array(1))[0] % DRAW_WORDS.length];
-    drawing.startedAt = Date.now(); drawing.endsAt = drawing.startedAt + 60_000; drawing.strokes = []; drawing.guessedPlayers = [];
+    drawing.round = nextRound; drawing.drawerId = drawerId; drawing.word = "";
+    drawing.stage = "choosing"; drawing.choices = chooseWordPair(); drawing.revealedIndices = [];
+    drawing.startedAt = 0; drawing.endsAt = Date.now() + 15_000; drawing.strokes = []; drawing.guessedPlayers = [];
     this.game.event = { kind: "drawRound", name: drawer.name, id: drawerId };
-    this.addDrawChat("system", "Комната", `Раунд ${drawing.round}/${drawing.roundsTotal}: рисует ${drawer.name}.`);
-    await this.ctx.storage.setAlarm(Math.min(drawing.endsAt, drawing.startedAt + 20_000)); await this.publish();
+    this.addDrawChat("system", "Комната", `Раунд ${drawing.round}/${drawing.roundsTotal}: ${drawer.name} выбирает слово.`);
+    await this.ctx.storage.setAlarm(drawing.endsAt); await this.publish();
+  }
+
+  private async selectDrawWord(index: number) {
+    if (!this.game?.drawing || this.game.phase !== "playing" || this.game.drawing.stage !== "choosing") return;
+    const drawing = this.game.drawing, word = drawing.choices[index];
+    if (!word) return;
+    drawing.word = word; drawing.choices = []; drawing.stage = "drawing";
+    drawing.startedAt = Date.now(); drawing.endsAt = drawing.startedAt + 60_000;
+    const drawer = this.game.players.find(player => player.id === drawing.drawerId);
+    this.addDrawChat("system", "Комната", `${drawer?.name ?? "Игрок"} рисует. У вас 60 секунд!`);
+    await this.ctx.storage.setAlarm(drawing.endsAt); await this.publish();
+  }
+
+  private async advanceDrawDeadline(): Promise<boolean> {
+    if (!this.game?.drawing || this.game.phase !== "playing" || this.game.drawing.endsAt > Date.now()) return false;
+    if (this.game.drawing.stage === "choosing") await this.selectDrawWord(crypto.getRandomValues(new Uint32Array(1))[0] % this.game.drawing.choices.length);
+    else await this.endDrawRound();
+    return true;
   }
 
   private async endDrawRound() {
     if (!this.game?.drawing || this.game.phase !== "playing") return;
     const drawing = this.game.drawing;
-    this.addDrawChat("system", "Слово", drawing.word);
+    if (drawing.word) this.addDrawChat("system", "Слово", drawing.word);
     await this.beginDrawRound(drawing.round + 1);
   }
 
   private async handleDrawPacket(socket: WebSocket, playerId: string, packet: Record<string, unknown>) {
     if (!this.game || this.game.phase !== "playing" || this.game.over || !this.game.drawing) return;
+    if (await this.advanceDrawDeadline()) return;
     const drawing = this.game.drawing, player = this.game.players.find(item => item.id === playerId);
     if (!player) return;
+    if (packet.round !== undefined && packet.round !== drawing.round) return;
     this.game.event = null;
+    if (packet.type === "chooseWord") {
+      if (drawing.drawerId !== playerId || drawing.stage !== "choosing" || !Number.isInteger(packet.index)) return;
+      await this.selectDrawWord(Number(packet.index)); return;
+    }
+    if (drawing.stage !== "drawing") return;
+    if (packet.type === "hint") {
+      if (drawing.drawerId !== playerId || drawing.revealedIndices.length >= maxHints(drawing.word)) return;
+      const hidden = letterIndices(drawing.word).filter(index => !drawing.revealedIndices.includes(index));
+      if (hidden.length <= 1) return;
+      drawing.revealedIndices.push(hidden[crypto.getRandomValues(new Uint32Array(1))[0] % hidden.length]);
+      this.addDrawChat("system", "Комната", "Художник открыл букву в подсказке.");
+      await this.publish(); return;
+    }
     if (packet.type === "stroke" || packet.type === "clear") {
       if (drawing.drawerId !== playerId) return;
       if (packet.type === "clear") drawing.strokes = [];
@@ -245,16 +293,21 @@ export class GameRoom extends DurableObject<Env> {
         const input = packet.stroke as Partial<Stroke> | null;
         if (!input || !Array.isArray(input.points) || input.points.length < 2 || input.points.length > 100 || drawing.strokes.length >= 800) return;
         const color = typeof input.color === "string" && /^#[0-9a-f]{6}$/i.test(input.color) ? input.color : "#17201c";
-        const size = Math.min(0.06, Math.max(0.003, Number(input.size) || 0.012));
-        const points = input.points.filter(point => point && typeof point === "object").map(point => ({ x: Math.min(1, Math.max(0, Number(point.x) || 0)), y: Math.min(1, Math.max(0, Number(point.y) || 0)) }));
+        const size = Math.min(0.08, Math.max(0.003, Number(input.size) || 0.012));
+        const tool = input.tool === "line" || input.tool === "eraser" ? input.tool : "pen";
+        const opacityValue = input.opacity == null ? 1 : Number(input.opacity);
+        const opacity = Number.isFinite(opacityValue) ? Math.min(1, Math.max(0.1, opacityValue)) : 1;
+        let points = input.points.filter(point => point && typeof point === "object").map(point => ({ x: Math.min(1, Math.max(0, Number(point.x) || 0)), y: Math.min(1, Math.max(0, Number(point.y) || 0)) }));
         if (points.length < 2) return;
-        drawing.strokes.push({ color, size, points });
+        if (tool === "line") points = [points[0], points[points.length - 1]];
+        drawing.strokes.push({ color, size, tool, opacity, points });
       }
       await this.publish(); return;
     }
     if (packet.type === "guess" || packet.type === "chat") {
       const text = String(packet.text ?? "").replace(/[<>\u0000-\u001f]/g, " ").trim().slice(0, 60);
       if (!text) return;
+      if ((playerId === drawing.drawerId || drawing.guessedPlayers.includes(playerId)) && normalizeWord(text) === normalizeWord(drawing.word)) return;
       if (packet.type === "guess" && playerId !== drawing.drawerId && !drawing.guessedPlayers.includes(playerId) && normalizeWord(text) === normalizeWord(drawing.word)) {
         const position = drawing.guessedPlayers.length;
         const points = Math.max(25, 100 - position * 15 - Math.floor((Date.now() - drawing.startedAt) / 1500));
@@ -298,11 +351,14 @@ export class GameRoom extends DurableObject<Env> {
       this.game.event = { kind: "joined", name, id };
     } else {
       if (!token || token !== player.token) { socket.send(JSON.stringify({ type: "error", message: "Не удалось подтвердить участника комнаты. Создай новую комнату или проверь ссылку." })); socket.close(1008, "invalid player token"); return; }
-      player.name = name; player.online = true; player.flags ??= []; player.explosions ??= 0; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (!this.game.over) player.score = 0;
+      player.name = name; player.online = true; player.flags ??= []; player.explosions ??= 0; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (this.game.mode !== "draw" && !this.game.over) player.score = 0;
     }
     socket.serializeAttachment({ id, name } satisfies Identity);
-    if (this.game.mode === "draw" && this.game.phase === "playing" && this.game.drawing && this.game.drawing.endsAt <= Date.now()) await this.endDrawRound();
-    else await this.publish();
+    if (this.game.mode === "draw" && this.game.phase === "playing" && this.game.drawing) {
+      if (await this.advanceDrawDeadline()) return;
+      await this.ctx.storage.setAlarm(this.game.drawing.endsAt);
+    }
+    await this.publish();
   }
 
   private finishIfDone() {
@@ -333,6 +389,7 @@ export class GameRoom extends DurableObject<Env> {
     await this.init;
     const identity = socket.deserializeAttachment() as Identity | null;
     if (!this.game || !identity?.id) return;
+    if (this.ctx.getWebSockets().some(other => other !== socket && other.readyState === WebSocket.OPEN && (other.deserializeAttachment() as Identity | null)?.id === identity.id)) return;
     const player = this.game.players.find(p => p.id === identity.id);
     if (player) player.online = false;
     const wasDrawer = this.game.mode === "draw" && this.game.phase === "playing" && this.game.drawing?.drawerId === identity.id;
@@ -344,14 +401,10 @@ export class GameRoom extends DurableObject<Env> {
 
   alarm(): Promise<void> {
     return this.serialize(async () => {
+      await this.init;
       if (!this.ctx.getWebSockets().some(ws => ws.readyState === WebSocket.OPEN)) { this.game = null; await this.ctx.storage.deleteAll(); return; }
       if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) {
-        const drawing = this.game.drawing, now = Date.now();
-        if (drawing.endsAt <= now) await this.endDrawRound();
-        else {
-          const elapsed = now - drawing.startedAt, nextReveal = elapsed < 20_000 ? drawing.startedAt + 20_000 : elapsed < 40_000 ? drawing.startedAt + 40_000 : drawing.endsAt;
-          await this.ctx.storage.setAlarm(Math.min(drawing.endsAt, nextReveal)); await this.publish();
-        }
+        if (!(await this.advanceDrawDeadline())) await this.ctx.storage.setAlarm(this.game.drawing.endsAt);
       }
     });
   }
