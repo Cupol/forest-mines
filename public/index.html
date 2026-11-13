@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101817">
+  <meta name="description" content="Лесной сапёр — дружеская игра на поиск мин и общий счёт">
+  <title>Лесной сапёр</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="На главную"><span class="brand-icon">✦</span><span>ЛЕСНАЯ СФЕРА<small>КОМНАТА НАСТОЛЬНЫХ ИГР</small></span></a>
+      <div class="online-pill"><i></i><span id="connection-label">ОДИНОЧНЫЙ РЕЖИМ</span></div>
+    </header>
+
+    <section class="landing" id="landing">
+      <div class="intro">
+        <span class="eyebrow">ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.</span>
+        <h1>Лесной<br><em>сапёр</em></h1>
+        <p>Соседи открывают клетки одновременно. Найди скрытую мину и отметь её первым — получи очки. Подорвёшься — потеряешь.</p>
+        <div class="rules-strip"><span><b>+2</b> верно отмеченная мина</span><span><b>−3</b> подрыв</span><span><b>17</b> попыток с флажком</span></div>
+      </div>
+      <section class="lobby card">
+        <div class="card-heading"><span class="eyebrow">СТАРАЯ ЛЕСНАЯ СТОЛОВАЯ</span><span class="seal">01 / 03</span></div>
+        <label class="field-label" for="player-name">ТВОЁ ИМЯ</label>
+        <input id="player-name" maxlength="20" placeholder="Смотритель" autocomplete="nickname">
+        <button id="create-room" class="button button-primary"><span>Создать комнату</span><span>↗</span></button>
+        <div class="divider"><span>или присоединиться</span></div>
+        <div class="join-line"><input id="room-code" maxlength="6" placeholder="КОД КОМНАТЫ" aria-label="Код комнаты"><button id="join-room" class="button button-quiet" aria-label="Войти по коду">Войти <span>→</span></button></div>
+        <button id="solo-start" class="text-button">Остаться и сыграть с лесным духом <span>→</span></button>
+        <p class="lobby-error" id="lobby-error" role="alert"></p>
+      </section>
+      <div class="bottom-note"><span>16 × 16 КЛЕТОК</span><span>33 МИНЫ</span><span>ДО 20 ИГРОКОВ</span></div>
+    </section>
+
+    <section class="game hidden" id="game">
+      <header class="game-head card">
+        <div class="game-title"><div class="eyebrow">СТОЛОВАЯ · ПАРТИЯ <span id="room-label">#----</span></div><h2>Счёт за опасные открытия</h2></div>
+        <div class="head-actions"><button id="copy-link" class="button button-quiet">Пригласить ↗</button><button id="leave-room" class="icon-button" aria-label="Вернуться в меню">×</button></div>
+      </header>
+      <div class="dashboard">
+        <aside class="players-panel card"><div class="panel-title"><span>ЗА СТОЛОМ</span><span id="player-count">1 / 20</span></div><ol id="players-list" class="players-list"></ol><div class="your-resources"><span>МОИ ФЛАЖКИ</span><strong><span id="flags-left">17</span><small> / 17</small></strong><p>Каждая попытка тратит флажок. Угаданные мины открывают свет для всех.</p></div><div class="legend"><span><i class="legend-mine"></i> найденная мина</span><span><i class="legend-flag">⚑</i> твоя догадка</span></div></aside>
+        <section class="board-panel card">
+          <div class="board-toolbar"><div><span class="eyebrow">ОБЩЕЕ ПОЛЕ</span><div class="board-subtitle"><span id="safe-count">223</span> безопасных клеток · <span id="mine-count">33</span> мин</div></div><div class="board-controls"><span class="action-hint">ЛКМ — проверить&nbsp; · &nbsp;ПКМ — флажок</span><button id="flag-mode" class="button button-quiet flag-mode" aria-pressed="false">⚑ Флажок</button></div></div>
+          <div class="board-wrap"><div class="board" id="board" role="grid" aria-label="Поле сапёра"></div></div>
+          <div class="status-line" id="game-status" role="status"><span class="status-dot"></span><span>Комната готова. Присоединяйся — и начинайте!</span></div>
+        </section>
+        <aside class="score-panel card"><div class="panel-title"><span>ПРОГРЕСС</span><span class="moon">◔</span></div><div class="progress-number"><strong id="found-count">0</strong><span> / 33</span></div><p class="progress-caption">МИН ОТМЕЧЕНО</p><div class="progress-track"><i id="progress-bar"></i></div><div class="round-divider"></div><div class="my-score"><span>ТВОИ ОЧКИ</span><strong id="my-score">0</strong></div><p class="scoring-note"><b>+2</b> за верно найденную мину<br><b>−3</b> за подрыв</p><div class="room-share"><span>КОД ДРУЗЬЯМ</span><strong id="share-code">----</strong></div></aside>
+      </div>
+      <footer class="game-footer"><span>ПЕРВЫЙ УСПЕЛ — ПОЛУЧИЛ ОЧКО</span><span>ОДНА КОМНАТА · ОДНО ОБЩЕЕ ПОЛЕ</span></footer>
+    </section>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+</body>
+</html>
