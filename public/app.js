@@ -1,3 +1,4 @@
+import { TYPING_TEXTS } from "./typing-texts.js";
 import { DRAW_WORDS } from "./draw-words.js";
 import { FLEET, shipCells, canPlace } from "./sea-rules.js";
 
@@ -33,7 +34,6 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     document.title = drawing ? "Рисуй и угадывай — Круг друзей" : "Сапёр — Круг друзей";
     $("game-index").textContent = `ИГРА ${modes.indexOf(selectedMode) + 1} / ${modes.length}`;
     $("landing-cap").textContent = selectedMode === "sea" ? "2 ИГРОКА" : "ДО 20 ИГРОКОВ";
-    $("solo-start").classList.toggle("hidden", selectedMode === "typing");
     $("hero-eyebrow").textContent = drawing ? "СЛОВО ЗАДАНО. ТВОЯ ОЧЕРЕДЬ РИСОВАТЬ." : "ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.";
     $("hero-title").innerHTML = drawing ? "Рисуй и<br><em>угадывай</em>" : "<em>Сапёр</em>";
     $("hero-description").textContent = drawing ? "Рисуй загаданное слово, пока друзья угадывают. Очки получают самые быстрые догадчики." : "Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.";
@@ -49,6 +49,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       $("create-room-text").textContent = "Создать комнату";
     }
     if (selectedMode === "typing") {
+      $("solo-start").textContent = "Попробовать одному →";
       document.title = "Кто быстрее напишет — Круг друзей";
       $("hero-eyebrow").textContent = "ГОНКА ПЕЧАТИ";
       $("hero-title").innerHTML = "Кто быстрее<br><em>напишет?</em>";
@@ -145,7 +146,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   }
   function enterRoom(code, makeNew) {
     const name = cleanName(); if (!name) return;
-    seaDraft = []; seaVertical = false;
+    seaDraft = FLEET.map(() => null); seaSelected = 0; seaVertical = false;
     if (makeNew) flagLimitCustom = false;
     const api = apiAddress();
     if (!api) { showError("Сервер комнаты ещё не подключён. Пока доступна одиночная игра."); return; }
@@ -355,9 +356,9 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     ui.drawClock.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     ui.drawClock.classList.toggle("time-low", seconds <= 10);
   }
-  let seaDraft = [], seaVertical = false;
+  let seaDraft = FLEET.map(() => null), seaSelected = 0, seaVertical = false;
   const seaColumns = "АБВГДЕЖЗИК";
-  function seaGrid(id, states, action) {
+  function seaGrid(id, states, action, placing = false) {
     const grid = $(id);
     const focused = grid.contains(document.activeElement) ? document.activeElement.dataset.cell : undefined;
     const fragment = document.createDocumentFragment();
@@ -380,6 +381,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       cell.textContent = state === "miss" ? "·" : state === "hit" || state === "sunk" ? "×" : "";
       cell.disabled = !action || state === "miss" || state === "hit" || state === "sunk";
       if (!cell.disabled) cell.addEventListener("click", () => action(i));
+      if (placing) bindSeaDrag(cell, i);
       fragment.append(cell);
     }
     grid.replaceChildren(fragment);
@@ -388,7 +390,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   function drawSea() {
     for (const panel of [ui.roomSetup, ui.dashboard, ui.drawLobby, ui.drawDashboard]) panel.classList.add("hidden");
     const sea = game.sea, opponent = game.players.find(player => player.id !== myId);
-    const ownFleet = sea?.ownFleet?.length ? sea.ownFleet : seaDraft;
+    const ownFleet = sea?.ownFleet?.length ? sea.ownFleet : seaDraft.filter(Boolean);
     const ready = Boolean(sea?.ownFleet?.length);
     const placing = game.phase === "lobby" && !ready;
     const myTurn = game.phase === "playing" && sea?.turn === myId && opponent?.online && (solo || socket?.readyState === WebSocket.OPEN);
@@ -397,34 +399,99 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     ui.copyLink.textContent = "Пригласить ↗";
     ui.phaseHint.textContent = "КОРАБЛИ НЕ СОПРИКАСАЮТСЯ · ПОПАДАНИЕ ДАЁТ ЕЩЁ ХОД";
     $("sea-status").textContent = game.over ? "Партия завершена" : !opponent?.online ? "Ждём соперника. Можно расставить корабли заранее." :
-      placing ? FLEET[seaDraft.length] ? `Поставь корабль на ${FLEET[seaDraft.length]} кл. · ${seaDraft.length}/10` : "Флот расставлен. Нажми «Готов»." :
+      placing ? `Расставлено ${ownFleet.length}/10. ${ownFleet.length === 10 ? "Можно нажать «Готов»." : "Выбери корабль и место для него."}` :
       game.phase === "lobby" ? "Флот готов. Ждём расстановку соперника." : myTurn ? "Твой ход. Выбери клетку на поле соперника." : `Ходит ${opponent.name}.`;
     $("sea-result").textContent = game.over ? game.winnerId === myId ? "Ты победил!" : `Победил ${opponent?.name ?? "соперник"}.` : "";
     $("sea-restart").classList.toggle("hidden", !solo || !game.over);
     $("sea-controls").classList.toggle("hidden", !placing);
+    $("sea-picker").classList.toggle("hidden", game.phase !== "lobby");
+    if (game.phase === "lobby") renderSeaShips(placing, ownFleet);
     $("sea-target").classList.toggle("hidden", game.phase === "lobby");
-    $("sea-ready").disabled = seaDraft.length !== FLEET.length || !opponent?.online;
-    $("sea-undo").disabled = !seaDraft.length;
+    $("sea-ready").disabled = ownFleet.length !== FLEET.length || !opponent?.online;
+    $("sea-undo").disabled = !seaDraft[seaSelected];
     $("sea-rotate").textContent = seaVertical ? "Вертикально ↻" : "Горизонтально ↻";
     const own = new Map(ownFleet.flat().map(cell => [cell, "ship"]));
     for (const cell of sea?.incoming ?? []) own.set(cell, own.has(cell) ? "hit" : "miss");
     for (const ship of ownFleet) if (ship.every(cell => own.get(cell) === "hit")) for (const cell of ship) own.set(cell, "sunk");
     const enemy = new Map((sea?.fired ?? []).map(({ cell, hit }) => [cell, hit ? "hit" : "miss"]));
     for (const cell of (sea?.sunk ?? []).flat()) enemy.set(cell, "sunk");
-    seaGrid("sea-own", own, placing ? start => {
-      const length = FLEET[seaDraft.length];
-      if (!length) return;
-      const cells = shipCells(start, length, seaVertical);
-      if (!canPlace(cells, seaDraft)) { notify("Корабль не помещается или касается другого."); return; }
-      seaDraft.push(cells); drawSea();
-    } : null);
+    seaGrid("sea-own", own, placing ? cell => {
+      const occupied = seaDraft.findIndex(ship => ship?.includes(cell));
+      if (occupied >= 0) { selectSeaShip(occupied); drawSea(); }
+      else placeSeaShip(seaSelected, cell, seaVertical);
+    } : null, placing);
     seaGrid("sea-enemy", enemy, myTurn ? cell => {
       if (solo) localSeaFire(cell, false);
       else socket.send(JSON.stringify({ type: "seaFire", cell }));
     } : null);
   }
-  $("sea-rotate").addEventListener("click", () => { seaVertical = !seaVertical; drawSea(); });
-  $("sea-undo").addEventListener("click", () => { seaDraft.pop(); drawSea(); });
+  function selectSeaShip(index) {
+    seaSelected = index;
+    const ship = seaDraft[index];
+    if (ship) seaVertical = ship[1] - ship[0] === 10;
+  }
+  function placeSeaShip(index, start, vertical) {
+    if (game?.mode !== "sea" || game.phase !== "lobby" || game.sea?.ownFleet?.length || !FLEET[index]) return;
+    const cells = shipCells(start, FLEET[index], vertical);
+    if (!canPlace(cells, seaDraft.filter((ship, i) => ship && i !== index))) {
+      notify("Корабль не помещается или касается другого."); return;
+    }
+    seaDraft[index] = cells;
+    seaSelected = index;
+    seaVertical = vertical;
+    drawSea();
+  }
+  function enableSeaDrag(element, index, offset, vertical) {
+    element.draggable = true;
+    element.addEventListener("dragstart", event => {
+      event.dataTransfer.setData("application/x-sea-ship", JSON.stringify({ index, offset, vertical }));
+      event.dataTransfer.effectAllowed = "move";
+    });
+  }
+  function bindSeaDrag(cell, position) {
+    const index = seaDraft.findIndex(ship => ship?.includes(position));
+    if (index >= 0) {
+      const ship = seaDraft[index];
+      enableSeaDrag(cell, index, ship.indexOf(position), ship[1] - ship[0] === 10);
+      if (index === seaSelected) cell.classList.add("sea-selected");
+    }
+    cell.addEventListener("dragover", event => {
+      if (event.dataTransfer.types.includes("application/x-sea-ship")) event.preventDefault();
+    });
+    cell.addEventListener("drop", event => {
+      event.preventDefault();
+      const raw = event.dataTransfer.getData("application/x-sea-ship");
+      if (!raw) return;
+      let ship;
+      try { ship = JSON.parse(raw); } catch { return; }
+      if (!Number.isInteger(ship?.index) || !Number.isInteger(ship.offset)) return;
+      if (!ship.vertical && position % 10 < ship.offset) return;
+      placeSeaShip(ship.index, position - ship.offset * (ship.vertical ? 10 : 1), ship.vertical);
+    });
+  }
+  function renderSeaShips(placing, ownFleet) {
+    const list = $("sea-ships");
+    list.replaceChildren();
+    for (const [index, length] of FLEET.entries()) {
+      const button = document.createElement("button");
+      button.type = "button"; button.className = "button sea-ship-card";
+      button.disabled = !placing;
+      const ship = placing ? seaDraft[index] : ownFleet[index];
+      button.classList.toggle("sea-placed", Boolean(ship));
+      button.setAttribute("aria-pressed", String(index === seaSelected));
+      button.setAttribute("aria-label", "Корабль " + (index + 1) + ", клеток: " + length + (ship ? ", расставлен" : ""));
+      for (let i = 0; i < length; i++) button.append(document.createElement("span"));
+      if (placing) enableSeaDrag(button, index, 0, ship ? ship[1] - ship[0] === 10 : index === seaSelected && seaVertical);
+      button.addEventListener("click", () => { selectSeaShip(index); drawSea(); $("sea-ships").children[index]?.focus(); });
+      list.append(button);
+    }
+  }
+  $("sea-rotate").addEventListener("click", () => {
+    const ship = seaDraft[seaSelected];
+    if (ship?.length > 1) placeSeaShip(seaSelected, ship[0], !seaVertical);
+    else { seaVertical = !seaVertical; drawSea(); }
+  });
+  $("sea-undo").addEventListener("click", () => { seaDraft[seaSelected] = null; drawSea(); });
   function randomFleet() {
     let fleet = [];
     while (fleet.length !== FLEET.length) {
@@ -444,7 +511,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   function startSeaPractice() {
     clearTimeout(botTimer);
     solo = true; myId = "local-sea"; roomId = "БОТ";
-    seaDraft = []; seaVertical = false; seaBotFleet = randomFleet();
+    seaDraft = FLEET.map(() => null); seaSelected = 0; seaVertical = false; seaBotFleet = randomFleet();
     game = { mode: "sea", phase: "lobby", over: false, players: [
       { id: myId, name: ui.name.value.trim() || "Ты", online: true },
       { id: seaBotId, name: "Бот", online: true }
@@ -480,11 +547,11 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   }
   $("sea-restart").addEventListener("click", startSeaPractice);
   $("sea-ready").addEventListener("click", () => {
-    if (solo && game?.mode === "sea" && game.phase === "lobby" && seaDraft.length === FLEET.length) {
+    if (solo && game?.mode === "sea" && game.phase === "lobby" && seaDraft.every(Boolean)) {
       game.sea = { ownFleet: seaDraft, incoming: [], fired: [], sunk: [], turn: myId };
       game.phase = "playing"; drawSea(); return;
     }
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "seaReady", fleet: seaDraft }));
+    if (seaDraft.every(Boolean) && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "seaReady", fleet: seaDraft }));
   });
 
   function draw() {
@@ -560,6 +627,46 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   }
   let typingClock = 0, typingFlush = 0, typingRound = 0, typingEdits = [];
   const typingInput = $("typing-input");
+  let practiceTypingText = "", practiceAttempts = 0, practiceErrors = 0;
+  function startTypingPractice() {
+    const choices = TYPING_TEXTS.filter(text => text !== practiceTypingText);
+    practiceTypingText = choices[Math.floor(Math.random() * choices.length)];
+    practiceAttempts = 0; practiceErrors = 0;
+    solo = true; myId = "local-typing"; roomId = "ПРАКТИКА";
+    typingRound = 0;
+    const startsAt = Date.now() + 3000;
+    game = {
+      mode: "typing", phase: "playing", over: false,
+      players: [{ id: myId, name: ui.name.value.trim() || "Ты", online: true }],
+      typing: { text: practiceTypingText, startsAt, endsAt: startsAt + 120000, round: 1, value: "",
+        results: [{ id: myId, correct: 0, speed: 0, accuracy: 0, finished: false }] }
+    };
+    showGame("solo");
+    ui.connection.textContent = "ОДИНОЧНАЯ ПРАКТИКА";
+    draw();
+  }
+  function updateTypingPractice(value) {
+    const race = game.typing;
+    const old = race.value;
+    let start = 0, suffix = 0;
+    while (start < Math.min(old.length, value.length) && old[start] === value[start]) start++;
+    while (suffix < Math.min(old.length, value.length) - start &&
+           old[old.length - 1 - suffix] === value[value.length - 1 - suffix]) suffix++;
+    for (let i = start; i < value.length - suffix; i++) {
+      practiceAttempts++;
+      if (value[i] !== race.text[i]) practiceErrors++;
+    }
+    race.value = value;
+    const correct = [...value].filter((character, index) => character === race.text[index]).length;
+    const seconds = Math.max(1, (Math.min(Date.now(), race.endsAt) - race.startsAt) / 1000);
+    const finished = value === race.text;
+    race.results[0] = { id: myId, correct, speed: correct * 60 / seconds,
+      accuracy: practiceAttempts ? 1 - practiceErrors / practiceAttempts : 0, finished };
+    game.over = finished || Date.now() >= race.endsAt;
+    if (game.over) game.phase = "over";
+    drawTyping();
+  }
+  $("typing-restart").addEventListener("click", startTypingPractice);
   function flushTyping() {
     clearTimeout(typingFlush); typingFlush = 0;
     if (typingEdits.length && game?.mode === "typing" && socket?.readyState === WebSocket.OPEN) {
@@ -573,6 +680,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     const me = race.results.find(result => result.id === myId);
     const countdown = Math.ceil((race.startsAt - Date.now()) / 1000);
     const left = Math.max(0, Math.ceil((race.endsAt - Date.now()) / 1000));
+    if (solo && !game.over && left === 0) { updateTypingPractice(typingInput.value); return; }
     const canType = Boolean(me && !me.finished && countdown <= 0 && left && !game.over);
     const wasDisabled = typingInput.disabled;
     typingInput.disabled = !canType;
@@ -581,7 +689,8 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     const status = $("typing-status");
     if (game.over) {
       const winner = game.players.find(player => player.id === game.winnerId);
-      status.textContent = winner ? `Победитель — ${winner.name}!` : "Гонка завершена без победителя.";
+      status.textContent = solo ? (me.finished ? "Текст набран. Твой результат ниже." : "Время вышло. Твой результат ниже.") :
+        winner ? `Победитель — ${winner.name}!` : "Гонка завершена без победителя.";
     } else if (countdown > 0) {
       const names = race.previous?.eliminated.map(id => game.players.find(player => player.id === id)?.name).filter(Boolean);
       status.textContent = `${names?.length ? "Выбыли: " + names.join(", ") + ". " : ""}Раунд ${race.round} через ${countdown} сек.`;
@@ -601,6 +710,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     for (const panel of [ui.roomSetup, ui.dashboard, ui.drawLobby, ui.drawDashboard]) panel.classList.add("hidden");
     ui.heading.textContent = "Кто быстрее напишет?";
     ui.copyLink.disabled = game.phase !== "lobby"; ui.copyLink.textContent = "Пригласить ↗";
+    $("typing-restart").classList.toggle("hidden", !solo);
     ui.phaseHint.textContent = "РЕЗУЛЬТАТ УЧИТЫВАЕТ СКОРОСТЬ И ТОЧНОСТЬ";
     const race = game.typing, start = $("typing-start");
     const online = game.players.filter(player => player.online);
@@ -644,6 +754,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   for (const event of ["paste", "drop"]) typingInput.addEventListener(event, e => e.preventDefault());
   typingInput.addEventListener("input", () => {
     if (typingInput.disabled || game?.mode !== "typing") return;
+    if (solo) { updateTypingPractice(typingInput.value); return; }
     typingEdits.push(typingInput.value);
     if (typingEdits.length >= 24 || typingInput.value === game.typing.text) flushTyping();
     else if (!typingFlush) typingFlush = setTimeout(flushTyping, 160);
@@ -753,7 +864,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   $("practice-restart").addEventListener("click", () => startDrawingPractice(practiceRole));
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (selectedMode === "sea") { startSeaPractice(); return; } if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (selectedMode === "typing") { startTypingPractice(); return; } if (selectedMode === "sea") { startSeaPractice(); return; } if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   $("game-prev").addEventListener("click", () => changeGame(-1));
   $("game-next").addEventListener("click", () => changeGame(1));
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {

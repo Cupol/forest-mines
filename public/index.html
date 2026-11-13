@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101817">
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
-  <link rel="stylesheet" href="style.css?v=typing-1">
+  <link rel="stylesheet" href="style.css?v=practice-fleet-1">
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=typing-1"></script>
+  <script type="module" src="app.js?v=practice-fleet-1"></script>
 </head>
 <body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -90,6 +90,7 @@
           <textarea id="typing-input" rows="4" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
         </div>
         <ul id="typing-results"></ul>
+        <button id="typing-restart" class="button hidden" type="button">Новый текст</button>
         <details id="typing-previous" class="hidden">
           <summary>Итоги прошлого раунда</summary>
           <ol id="typing-previous-results"></ol>
@@ -99,12 +100,13 @@
         <p id="sea-status" role="status"></p>
         <div id="sea-controls" class="head-actions sea-controls">
           <button id="sea-rotate" class="button" type="button">Горизонтально ↻</button>
-          <button id="sea-undo" class="button" type="button">Убрать последний</button>
+          <button id="sea-undo" class="button" type="button">Вернуть выбранный</button>
           <button id="sea-random" class="button" type="button">Случайная расстановка</button>
           <button id="sea-ready" class="button" type="button">Готов</button>
         </div>
         <div class="sea-boards">
           <section><h3>Твой флот</h3><div id="sea-own" class="sea-grid"></div></section>
+          <section id="sea-picker"><h3>Корабли для расстановки</h3><p>Выбери корабль и клетку или перетащи его. Уже поставленный корабль можно передвинуть.</p><div id="sea-ships" class="sea-ships"></div></section>
           <section id="sea-target"><h3>Поле соперника</h3><div id="sea-enemy" class="sea-grid"></div></section>
         </div>
         <p id="sea-result" role="status"></p>

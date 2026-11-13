@@ -70,6 +70,11 @@ body[data-game="sea"] .button-primary{background:#8ad9e9;color:#092331;border-co
 .sea-cell.sea-miss{background:#102c3c;color:#a4d6ed}
 .sea-cell.sea-hit{background:#954f49}
 .sea-cell.sea-sunk{background:#b4513b}
+.sea-ships{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.sea-ship-card{display:flex;gap:3px;min-height:40px;align-items:center;padding:6px}
+.sea-ship-card span{width:16px;aspect-ratio:1;background:#8ad9e9;border-radius:2px}
+.sea-ship-card.sea-placed span{opacity:.45}
+.sea-ship-card[aria-pressed="true"],.sea-cell.sea-selected{outline:2px solid #a4e6f1;outline-offset:-2px}
 body[data-game="typing"]{background:#251b15;--gold:#ffc486;--green:#ffc486;--line:#765338}
 body[data-game="typing"] .card{background:#38291f;border-color:#765338}
 body[data-game="typing"] .button-primary{background:#ffc486;color:#2b1b0e;border-color:#ffd2a4}
