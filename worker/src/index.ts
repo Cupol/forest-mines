@@ -4,12 +4,14 @@ const WIDTH = 16;
 const HEIGHT = 16;
 const MINE_COUNT = 33;
 const FLAG_LIMIT = 17;
+const BONUS_LIMIT = 8;
+const SAFE_PER_BONUS = 8;
 const MAX_PLAYERS = 20;
 const KEY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
-interface Player { id: string; name: string; score: number; flagsUsed: number; explosions: number; flags: number[]; online: boolean }
+interface Player { id: string; name: string; score: number; flagsUsed: number; bonusFlags: number; safeOpened: number; explosions: number; flags: number[]; online: boolean }
 interface Game { cells: Cell[]; players: Player[]; found: number; safe: number; over: boolean; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
@@ -35,8 +37,8 @@ function stripSecrets(game: Game, me: Player) {
   return {
     type: "state", room: "", me: me.id,
     cells: game.cells.map(c => c.open ? { open: true, mine: c.mine, near: c.near, boom: c.boom, by: c.by } : { open: false }),
-    players: game.players.map(({ id, name, score, flagsUsed, explosions, online }) => ({ id, name, score, flagsUsed, explosions, online })),
-    myFlags: me.flags, flagsUsed: me.flagsUsed, found: game.found, safe: game.safe, over: game.over, event: game.event,
+    players: game.players.map(({ id, name, score, flagsUsed, bonusFlags, explosions, online }) => ({ id, name, score, flagsUsed, bonusFlags, explosions, online })),
+    myFlags: me.flags, flagsUsed: me.flagsUsed, bonusFlags: me.bonusFlags, found: game.found, safe: game.safe, over: game.over, event: game.event,
   };
 }
 
@@ -105,7 +107,7 @@ export class GameRoom extends DurableObject<Env> {
         if (cell.open) return;
         const already = player.flags.indexOf(index);
         if (already >= 0) { player.flags.splice(already, 1); await this.publish(); return; }
-        if (player.flagsUsed >= FLAG_LIMIT) { socket.send(JSON.stringify({ type: "notice", text: "Потрачены все 17 попыток с флажком." })); return; }
+        if (player.flagsUsed >= FLAG_LIMIT + player.bonusFlags) { socket.send(JSON.stringify({ type: "notice", text: "Флажки закончились. Открывай безопасные клетки, чтобы заработать новые." })); return; }
         player.flagsUsed++;
         if (cell.mine) {
           cell.open = true; cell.by = player.name; player.score += 2; this.game.found++;
@@ -118,8 +120,9 @@ export class GameRoom extends DurableObject<Env> {
         if (cell.mine) { cell.open = true; cell.boom = true; cell.by = player.name; player.score -= 3; player.explosions++; this.game.event = { kind: "boom", name: player.name, id: player.id }; this.finishIfDone(); }
         else {
           const opened = new Set([index]), queue = [index];
-          while (queue.length) { const next = queue.shift()!; this.game.cells[next].open = true; this.game.cells[next].by = player.name; this.game.safe++; if (this.game.cells[next].near) continue; for (const neighbour of neighbours(next)) if (!this.game.cells[neighbour].open && !this.game.cells[neighbour].mine && !opened.has(neighbour)) { opened.add(neighbour); queue.push(neighbour); } }
-          this.game.event = { kind: "safe", name: player.name, id: player.id };
+          let earned = false;
+          while (queue.length) { const next = queue.shift()!; this.game.cells[next].open = true; this.game.cells[next].by = player.name; this.game.safe++; player.safeOpened++; if (player.safeOpened % SAFE_PER_BONUS === 0 && player.bonusFlags < BONUS_LIMIT) { player.bonusFlags++; earned = true; } if (this.game.cells[next].near) continue; for (const neighbour of neighbours(next)) if (!this.game.cells[neighbour].open && !this.game.cells[neighbour].mine && !opened.has(neighbour)) { opened.add(neighbour); queue.push(neighbour); } }
+          this.game.event = { kind: "safe", name: player.name, id: player.id, earned };
         }
       }
       await this.publish();
@@ -138,10 +141,10 @@ export class GameRoom extends DurableObject<Env> {
     let player = this.game.players.find(p => p.id === id);
     if (!player) {
       if (this.game.players.filter(p => p.online).length >= MAX_PLAYERS) { socket.send(JSON.stringify({ type: "error", message: "В комнате уже 20 игроков." })); socket.close(1008, "room full"); return; }
-      player = { id, name, score: 0, flagsUsed: 0, explosions: 0, flags: [], online: true };
+      player = { id, name, score: 0, flagsUsed: 0, bonusFlags: 0, safeOpened: 0, explosions: 0, flags: [], online: true };
       this.game.players.push(player);
       this.game.event = { kind: "joined", name, id };
-    } else { player.name = name; player.online = true; }
+    } else { player.name = name; player.online = true; player.bonusFlags ??= 0; player.safeOpened ??= 0; }
     socket.serializeAttachment({ id, name } satisfies Identity);
     await this.publish();
   }

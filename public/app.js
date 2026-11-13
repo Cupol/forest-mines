@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id);
   const ui = {
     landing: $("landing"), game: $("game"), name: $("player-name"), roomInput: $("room-code"), error: $("lobby-error"), board: $("board"), playerList: $("players-list"), status: $("game-status"),
-    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), found: $("found-count"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast")
+    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast")
   };
   const rememberedName = localStorage.getItem("forest-mines-name");
   if (rememberedName) ui.name.value = rememberedName;
@@ -38,7 +38,7 @@
   }
   function startView(id, mode) {
     roomId = id; solo = mode === "solo"; myId = "local-player";
-    game = { cells: makeBoard(), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, flagsUsed: 0, explosions: 0, online: true }], myFlags: [], found: 0, safe: 0, over: false };
+    game = { cells: makeBoard(), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, flagsUsed: 0, bonusFlags: 0, safeOpened: 0, explosions: 0, online: true }], myFlags: [], found: 0, safe: 0, over: false };
     showGame(mode); draw(); setStatus(solo ? "Лесной дух вышел на тропу. Найди его следы." : "Комната создана. Позови остальных за стол.");
   }
   function showGame(mode) {
@@ -71,7 +71,7 @@
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
       if (message.type === "notice") { setStatus(message.text || "Действие недоступно.", "hit"); return; }
       if (message.type === "state") {
-        game = { cells: message.cells, players: message.players, myFlags: message.myFlags || [], flagsUsed: message.flagsUsed || 0, found: message.found, safe: message.safe, over: message.over };
+        game = { cells: message.cells, players: message.players, myFlags: message.myFlags || [], flagsUsed: message.flagsUsed || 0, bonusFlags: message.bonusFlags || 0, found: message.found, safe: message.safe, over: message.over };
         myId = message.me; roomId = message.room; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
       }
@@ -100,7 +100,8 @@
       const existing = flags.indexOf(index);
       if (existing >= 0) { flags.splice(existing, 1); draw(); if (!solo) socket.send(JSON.stringify({ type, index })); return; }
       const used = solo ? player.flagsUsed : game.flagsUsed;
-      if (used >= FLAG_LIMIT) { if (id === myId) setStatus("Все 17 попыток с флажком израсходованы.", "hit"); return; }
+      const cap = FLAG_LIMIT + (solo ? player.bonusFlags : game.bonusFlags);
+      if (used >= cap) { if (id === myId) setStatus("Флажки закончились. Открывай безопасные клетки, чтобы заработать новые.", "hit"); return; }
       if (solo) player.flagsUsed++; else game.flagsUsed++;
       flags.push(index);
       if (cell.mine) {
@@ -113,7 +114,7 @@
       return;
     }
     if (flags.includes(index)) { if (id === myId) setStatus("Сначала сними свой флажок. Повторное нажатие на флажок отменяет попытку.", "hit"); return; }
-    openCells([index], id);
+    openCells(floodCandidates(index), id);
     if (solo) scheduleBot(1400 + Math.random() * 1900);
   }
   function openCells(indices, playerId) {
@@ -122,7 +123,12 @@
       const cell = game.cells[i]; if (!cell || cell.open) continue;
       cell.open = true; cell.by = player.name;
       if (cell.mine) { cell.boom = true; player.score -= 3; player.explosions++; if (playerId === myId) setStatus("Подрыв! −3 очка. Остальные мины ещё скрыты.", "hit"); }
-      else { game.safe++; if (!cell.near) for (const j of neighbors(i)) if (!game.cells[j].open && !game.cells[j].mine) game.cells[j].open = true; }
+      else {
+        game.safe++;
+        player.safeOpened++;
+        const earned = Math.min(8, Math.floor(player.safeOpened / 8));
+        if (earned > player.bonusFlags) { player.bonusFlags = earned; if (playerId === myId) setStatus("За 8 безопасных клеток ты получил дополнительный флажок!", "found"); }
+      }
     }
     finishIfDone(); draw();
   }
@@ -132,7 +138,7 @@
     if (event.kind === "found") setStatus(`${event.name} нашёл мину и получил +2.`, "found");
     else if (event.kind === "boom") setStatus(`${event.name} подорвался: −3 очка.`, "hit");
     else if (event.kind === "falseflag" && event.id === myId) setStatus("Тут пусто. Попытка с флажком потрачена.", "hit");
-    else if (event.kind === "safe") setStatus(`${event.name} проверил клетку. Цифры подскажут, где мина.`);
+    else if (event.kind === "safe") setStatus(event.earned && event.id === myId ? "За безопасные клетки ты получил дополнительный флажок!" : `${event.name} проверил клетку. Цифры подскажут, где мина.`, event.earned && event.id === myId ? "found" : "");
     else if (event.kind === "joined") notify(`${event.name} сел за стол`);
   }
   function draw() {
@@ -158,13 +164,14 @@
     const found = game.found || game.cells.filter(c => c.open && c.mine).length;
     ui.found.textContent = found; ui.safe.textContent = Math.max(0, W * H - MINES - game.safe); ui.mineCount.textContent = MINES - found; ui.progress.style.width = `${100 * found / MINES}%`;
     const me = currentPlayer(); ui.score.textContent = me ? me.score : 0;
-    const used = solo ? (me?.flagsUsed || 0) : (game.flagsUsed || 0); ui.flagsLeft.textContent = Math.max(0, FLAG_LIMIT - used);
+    const used = solo ? (me?.flagsUsed || 0) : (game.flagsUsed || 0), cap = FLAG_LIMIT + (solo ? (me?.bonusFlags || 0) : (game.bonusFlags || 0)); ui.flagsLeft.textContent = Math.max(0, cap - used); ui.flagCap.textContent = cap;
     ui.playerCount.textContent = `${game.players.filter(p => p.online !== false).length} / ${MAX_PLAYERS}`;
     ui.playerList.replaceChildren();
     for (const [rank, player] of game.players.toSorted((a, b) => b.score - a.score).entries()) {
-      const row = document.createElement("li"), name = document.createElement("span"), points = document.createElement("span"), avatar = document.createElement("span"), wrapper = document.createElement("span");
-      row.className = "player-row" + (player.id === myId ? " player-me" : ""); avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); wrapper.className = "player-name"; wrapper.textContent = player.name + (player.online === false ? " · вышел" : ""); points.className = "player-points"; points.textContent = String(player.score);
-      row.append(avatar, wrapper, points); ui.playerList.append(row);
+      const row = document.createElement("li"), points = document.createElement("span"), avatar = document.createElement("span"), details = document.createElement("span"), name = document.createElement("span"), resources = document.createElement("span");
+      const cap = FLAG_LIMIT + (player.bonusFlags || 0), left = Math.max(0, cap - (player.flagsUsed || 0));
+      row.className = "player-row" + (player.id === myId ? " player-me" : ""); avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.online === false ? " · вышел" : ""); resources.className = "player-sub"; resources.textContent = `⚑ ${left}`; points.className = "player-points"; points.textContent = String(player.score);
+      details.append(name, resources); row.append(avatar, details, points); ui.playerList.append(row);
     }
     ui.board.classList.toggle("game-over", Boolean(game.over));
   }
@@ -208,7 +215,7 @@
   function makeRoomCode() { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""); }
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo"); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, flagsUsed: 0, explosions: 0, flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo"); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, flagsUsed: 0, bonusFlags: 0, safeOpened: 0, explosions: 0, flags: [], online: true }); draw(); scheduleBot(900); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   $("leave-room").addEventListener("click", () => teardown());
   $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });
