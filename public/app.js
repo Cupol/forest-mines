@@ -65,6 +65,15 @@
     if (!raw) return "";
     return raw.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:").replace(/\/$/, "");
   }
+  function automaticFlagLimit(mines, players) {
+    const count = Math.max(1, players), spareFactor = Math.min(2, 1 + 0.25 * (count - 1));
+    return Math.max(1, Math.floor(mines * spareFactor / count));
+  }
+  function refreshAutomaticFlagLimit() {
+    const mineCount = Number($("mine-total").value) || PRESETS.medium.mines;
+    const players = game?.players.filter(player => player.online !== false).length || 1;
+    $("flag-total").value = automaticFlagLimit(mineCount, players);
+  }
   function chosenSettings(inRoom = false) {
     const error = inRoom ? $("setup-error") : ui.error;
     const config = { width: Number($("board-width").value), height: Number($("board-height").value), mines: Number($("mine-total").value), flags: Number($("flag-total").value) };
@@ -175,7 +184,7 @@
       setStatus("Партия завершена. Результат — в итогах.", "found"); showWinner();
     }
     else if (event.kind === "boom") setStatus(`${event.name} подорвался на мине: −3 очка.`, "hit");
-    else if (event.kind === "started") setStatus(event.name ? `Партия началась. Лимит флажков поднят до ${event.name} каждому, чтобы команде хватило отметить все мины.` : "Партия началась. Новые игроки уже не могут войти.");
+    else if (event.kind === "started") setStatus(`Партия началась. Лимит — ${event.name} флажков каждому. Вход новых игроков закрыт.`);
     else if (event.kind === "joined") notify(`${event.name} сел за стол`);
   }
   function showWinner() {
@@ -194,6 +203,7 @@
       ui.hostSettings.classList.toggle("hidden", !isHost); ui.guestWaiting.classList.toggle("hidden", isHost); ui.createBoard.classList.toggle("hidden", !isHost);
       ui.copyLink.disabled = false; ui.copyLink.textContent = "Пригласить ↗"; ui.heading.textContent = "Комната · ждём поле";
       ui.setupShareCode.textContent = roomId; ui.setupPlayerCount.textContent = `${game.players.filter(p => p.online !== false).length} / ${MAX_PLAYERS}`;
+      refreshAutomaticFlagLimit();
       ui.setupPlayers.replaceChildren();
       for (const player of game.players) {
         const row = document.createElement("li"), avatar = document.createElement("span"), details = document.createElement("span"), name = document.createElement("span"), role = document.createElement("span");
@@ -294,10 +304,10 @@
   $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
     const config = PRESETS[button.dataset.preset];
-    $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; $("flag-total").value = config.flags;
+    $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; refreshAutomaticFlagLimit();
     document.querySelectorAll("[data-preset]").forEach(item => item.classList.toggle("selected", item === button)); showError(""); $("setup-error").textContent = "";
   });
-  for (const id of ["board-width", "board-height", "mine-total", "flag-total"]) $(id).addEventListener("input", () => { document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; });
+  for (const id of ["board-width", "board-height", "mine-total"]) $(id).addEventListener("input", () => { document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; refreshAutomaticFlagLimit(); });
   ui.createBoard.addEventListener("click", () => { const config = chosenSettings(true); if (socket && config && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start", config })); });
   $("winner-close").addEventListener("click", () => { winnerDismissed = true; ui.winnerOverlay.classList.add("hidden"); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });

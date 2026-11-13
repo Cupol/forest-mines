@@ -46,6 +46,10 @@ function safeConfig(value: unknown): GameConfig {
   const flags = Math.max(1, Math.min(total, Math.round(Number(candidate.flags) || DEFAULT_CONFIG.flags)));
   return { width, height, mines, flags };
 }
+function automaticFlagLimit(mines: number, players: number): number {
+  const count = Math.max(1, players), spareFactor = Math.min(2, 1 + 0.25 * (count - 1));
+  return Math.max(1, Math.floor(mines * spareFactor / count));
+}
 function freshGame(): Game { return { config: null, cells: [], players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null }; }
 function stripSecrets(game: Game, me: Player) {
   return {
@@ -127,9 +131,9 @@ export class GameRoom extends DurableObject<Env> {
         if (this.game.phase !== "lobby" || this.game.hostId !== attachment.id) return;
         const requested = safeConfig(packet.config);
         const activePlayers = Math.max(1, this.game.players.filter(p => p.online !== false).length);
-        const config = { ...requested, flags: Math.max(requested.flags, Math.ceil(requested.mines / activePlayers)) };
+        const config = { ...requested, flags: automaticFlagLimit(requested.mines, activePlayers) };
         this.game.config = config; this.game.cells = randomBoard(config); this.game.safe = 0;
-        this.game.phase = "playing"; this.game.winnerId = ""; this.game.event = { kind: "started", name: config.flags > requested.flags ? String(config.flags) : "", id: attachment.id };
+        this.game.phase = "playing"; this.game.winnerId = ""; this.game.event = { kind: "started", name: String(config.flags), id: attachment.id };
         await this.publish(); return;
       }
       if (packet.type !== "open" && packet.type !== "flag") return;
