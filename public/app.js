@@ -52,7 +52,7 @@
   }
   function startView(id, mode, config) {
     roomId = id; solo = mode === "solo"; myId = "local-player";
-    game = { config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, explosions: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false };
+    game = { config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, explosions: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false, winnerId: "" };
     showGame(mode); draw(); setStatus(solo ? "Лесной дух вышел на тропу. Найди его следы." : "Комната создана. Позови остальных за стол.");
   }
   function showGame(mode) {
@@ -96,7 +96,7 @@
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
       if (message.type === "notice") { setStatus(message.text || "Действие недоступно.", "hit"); return; }
       if (message.type === "state") {
-        game = { cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over };
+        game = { cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "" };
         if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${message.room}`, myToken); }
         myId = message.me; roomId = message.room; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
@@ -164,6 +164,9 @@
     if (!game || game.over || game.safe < safeCount) return;
     game.over = true; game.phase = "over";
     for (const player of game.players) player.score = player.flags.reduce((sum, index) => sum + (game.cells[index].mine ? 2 : 0), 0) - (player.explosions || 0) * 3;
+    const ranked = [...game.players].sort((a, b) => b.score - a.score || b.flags.filter(i => game.cells[i]?.mine).length - a.flags.filter(i => game.cells[i]?.mine).length || (a.explosions || 0) - (b.explosions || 0));
+    const top = ranked.filter(player => player.score === ranked[0].score && player.flags.filter(i => game.cells[i]?.mine).length === ranked[0].flags.filter(i => game.cells[i]?.mine).length && (player.explosions || 0) === (ranked[0].explosions || 0));
+    game.winnerId = top[Math.floor(Math.random() * top.length)].id;
     setStatus("Партия завершена. Результат — в итогах.", "found"); showWinner();
   }
   function summarize(event) {
@@ -172,15 +175,15 @@
       setStatus("Партия завершена. Результат — в итогах.", "found"); showWinner();
     }
     else if (event.kind === "boom") setStatus(`${event.name} подорвался на мине: −3 очка.`, "hit");
-    else if (event.kind === "started") setStatus("Партия началась. Новые игроки уже не могут войти.");
+    else if (event.kind === "started") setStatus(event.name ? `Партия началась. Лимит флажков поднят до ${event.name} каждому, чтобы команде хватило отметить все мины.` : "Партия началась. Новые игроки уже не могут войти.");
     else if (event.kind === "joined") notify(`${event.name} сел за стол`);
   }
   function showWinner() {
     if (!game?.over || winnerDismissed) return;
-    const top = Math.max(...game.players.map(player => player.score));
-    const winners = game.players.filter(player => player.score === top);
-    ui.winnerTitle.textContent = winners.length === 1 ? `Победитель — ${winners[0].name}!` : "Ничья!";
-    ui.winnerMessage.textContent = winners.length === 1 ? `${top} очков. Мины отмечены точнее всех.` : `По ${top} очков: ${winners.map(player => player.name).join(", ")}.`;
+    const winner = game.players.find(player => player.id === game.winnerId) || [...game.players].sort((a, b) => b.score - a.score || b.flags.filter(i => game.cells[i]?.mine).length - a.flags.filter(i => game.cells[i]?.mine).length || (a.explosions || 0) - (b.explosions || 0) || a.id.localeCompare(b.id))[0];
+    const exact = game.players.filter(player => player.score === winner.score && player.flags.filter(i => game.cells[i]?.mine).length === winner.flags.filter(i => game.cells[i]?.mine).length && (player.explosions || 0) === (winner.explosions || 0)).length > 1;
+    ui.winnerTitle.textContent = `Победитель — ${winner.name}!`;
+    ui.winnerMessage.textContent = `${winner.score} очков. ${exact ? "Равенство решено жребием." : "Итог определён по очкам, точности флажков и числу подрывов."}`;
     ui.winnerOverlay.classList.remove("hidden");
   }
   function draw() {
@@ -288,7 +291,7 @@
   function makeRoomCode() { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""); }
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo", PRESETS.medium); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
     const config = PRESETS[button.dataset.preset];
     $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; $("flag-total").value = config.flags;

@@ -9,7 +9,7 @@ interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number }
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
 interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean }
-interface Game { config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; event: { kind: string; name: string; id: string } | null }
+interface Game { config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
 function neighbours(i: number, config: GameConfig): number[] {
@@ -52,7 +52,7 @@ function stripSecrets(game: Game, me: Player) {
     type: "state", room: "", me: me.id,
     cells: game.cells.map(c => c.open || game.over ? { open: true, mine: c.mine, near: c.near, boom: c.boom, by: c.by } : { open: false }),
     players: game.players.map(({ id, name, score, explosions, color, flags, online }) => ({ id, name, score: game.over ? score : 0, explosions, color, flags, online })),
-    config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, event: game.event,
+    config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, winnerId: game.winnerId ?? "", event: game.event,
   };
 }
 
@@ -125,9 +125,11 @@ export class GameRoom extends DurableObject<Env> {
       if (!attachment?.id || !this.game.players.some(p => p.id === attachment.id)) return;
       if (packet.type === "start") {
         if (this.game.phase !== "lobby" || this.game.hostId !== attachment.id) return;
-        const config = safeConfig(packet.config);
+        const requested = safeConfig(packet.config);
+        const activePlayers = Math.max(1, this.game.players.filter(p => p.online !== false).length);
+        const config = { ...requested, flags: Math.max(requested.flags, Math.ceil(requested.mines / activePlayers)) };
         this.game.config = config; this.game.cells = randomBoard(config); this.game.safe = 0;
-        this.game.phase = "playing"; this.game.event = { kind: "started", name: "", id: attachment.id };
+        this.game.phase = "playing"; this.game.winnerId = ""; this.game.event = { kind: "started", name: config.flags > requested.flags ? String(config.flags) : "", id: attachment.id };
         await this.publish(); return;
       }
       if (packet.type !== "open" && packet.type !== "flag") return;
@@ -194,6 +196,10 @@ export class GameRoom extends DurableObject<Env> {
     if (!this.game || this.game.over) return;
     this.game.over = true; this.game.phase = "over";
     for (const player of this.game.players) player.score = player.flags.reduce((score, index) => score + (this.game!.cells[index].mine ? 2 : 0), 0) - player.explosions * 3;
+    const accuracy = (player: Player) => player.flags.reduce((count, index) => count + (this.game!.cells[index]?.mine ? 1 : 0), 0);
+    const ranked = [...this.game.players].sort((a, b) => b.score - a.score || accuracy(b) - accuracy(a) || a.explosions - b.explosions);
+    const finalists = ranked.filter(player => player.score === ranked[0].score && accuracy(player) === accuracy(ranked[0]) && player.explosions === ranked[0].explosions);
+    this.game.winnerId = finalists[crypto.getRandomValues(new Uint32Array(1))[0] % finalists.length].id;
     this.game.event = { kind: "finished", name: "", id: "" };
   }
   private async publish() {
