@@ -202,7 +202,7 @@
       const c = game.cells[i], button = document.createElement("button"); button.type = "button"; button.className = "cell"; button.setAttribute("role", "gridcell"); button.dataset.index = i;
       if (c.open || game.over) {
         button.classList.add("revealed");
-        if (c.mine) { button.classList.add("mine"); if (c.boom) button.classList.add("exploded"); button.textContent = "✹"; button.setAttribute("aria-label", c.boom ? `Мина взорвалась: ${c.by}` : "Мина"); }
+        if (c.mine) { button.classList.add("mine"); if (c.boom) button.classList.add("exploded"); button.setAttribute("aria-label", c.boom ? `Мина взорвалась: ${c.by}` : "Мина"); }
         else if (c.near) { button.textContent = String(c.near); button.classList.add(`num-${c.near}`); button.setAttribute("aria-label", `Рядом мин: ${c.near}`); }
         else button.setAttribute("aria-label", "Безопасно");
       }
@@ -250,7 +250,10 @@
     for (const clue of open) {
       const around = neighbors(clue.i).filter(i => !game.cells[i].open && !bot.flags.includes(i));
       const needed = clue.c.near - neighbors(clue.i).filter(i => bot.flags.includes(i)).length;
-      if (needed > 0 && needed === around.length) { foundTarget = around[0]; break; }
+      if (needed > 0 && needed === around.length) {
+        foundTarget = around.find(i => !game.players.some(other => other.id !== bot.id && other.flags.includes(i))) ?? null;
+        if (foundTarget != null) break;
+      }
       if (needed === 0 && around.length) { safeTarget = around[0]; break; }
     }
     if (foundTarget == null && safeTarget == null) {
