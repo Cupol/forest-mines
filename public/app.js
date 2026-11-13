@@ -1,3 +1,5 @@
+import { DRAW_WORDS } from "./draw-words.js";
+
 (() => {
   "use strict";
   const MAX_PLAYERS = 20;
@@ -436,15 +438,35 @@
     { word: "зонт", paths: [[[.22,.52],[.26,.4],[.37,.27],[.5,.23],[.63,.27],[.74,.4],[.78,.52],[.22,.52]],[[.5,.19],[.5,.77],[.47,.83],[.42,.83],[.39,.78]]] }
   ];
   let practiceRole = "draw", practiceSketchIndex = -1;
+  const practiceDeckKey = "drawing-practice-remaining-v1";
+  const practiceDictionary = new Set(DRAW_WORDS);
+  let practiceDeck = [];
+  try {
+    const saved = JSON.parse(localStorage.getItem(practiceDeckKey) || "[]");
+    if (Array.isArray(saved)) practiceDeck = [...new Set(saved)].filter(word => practiceDictionary.has(word));
+  } catch {}
+
+  function takePracticeChoices() {
+    if (practiceDeck.length < 2) {
+      practiceDeck = [...DRAW_WORDS];
+      for (let i = practiceDeck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [practiceDeck[i], practiceDeck[j]] = [practiceDeck[j], practiceDeck[i]];
+      }
+    }
+    const choices = practiceDeck.splice(0, 2);
+    try { localStorage.setItem(practiceDeckKey, JSON.stringify(practiceDeck)); } catch {}
+    return choices;
+  }
+
   function startDrawingPractice(role = "draw") {
     solo = true; myId = "local-practice"; roomId = "ПРАКТИКА";
     practiceRole = role; activeStroke = null; ui.drawGuess.value = "";
-    const choices = ["кот", "ракета", "яблоко", "фонарь", "пингвин", "гитара", "торт", "машина"];
-    const first = choices.splice(Math.floor(Math.random() * choices.length), 1)[0];
+    const choices = role === "draw" ? takePracticeChoices() : [];
     game = {
       mode: "draw", phase: "playing", over: false, hostId: myId,
       players: [{ id: myId, name: ui.name.value.trim() || "Ты", score: 0, color: PLAYER_COLORS[0], online: true }],
-      drawing: { round: 1, roundsTotal: 1, drawerId: myId, stage: "choosing", choices: [first, choices[Math.floor(Math.random() * choices.length)]], word: "", hint: "", hintCount: 0, maxHints: 0, endsAt: Date.now() + 15000, strokes: [], guessedPlayers: [] },
+      drawing: { round: 1, roundsTotal: 1, drawerId: myId, stage: "choosing", choices, word: "", hint: "", hintCount: 0, maxHints: 0, endsAt: Date.now() + 15000, strokes: [], guessedPlayers: [] },
       chat: []
     };
     if (role === "guess") {

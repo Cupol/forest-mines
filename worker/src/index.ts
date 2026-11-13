@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { DRAW_WORDS } from "./draw-words";
+import { DRAW_WORDS } from "../../public/draw-words.js";
 
 const DEFAULT_CONFIG: GameConfig = { width: 16, height: 16, mines: 33, flags: 17 };
 const MAX_PLAYERS = 20;
