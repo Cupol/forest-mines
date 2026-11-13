@@ -10,7 +10,7 @@
   const $ = id => document.getElementById(id);
   const ui = {
     landing: $("landing"), game: $("game"), name: $("player-name"), roomInput: $("room-code"), error: $("lobby-error"), board: $("board"), playerList: $("players-list"), status: $("game-status"),
-    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast"), start: $("start-game"), settingsSummary: $("settings-summary"), phaseHint: $("phase-hint"), copyLink: $("copy-link")
+    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast"), createBoard: $("create-board"), copyLink: $("copy-link"), roomSetup: $("room-setup"), hostSettings: $("host-settings"), guestWaiting: $("guest-waiting"), setupPlayers: $("setup-players"), setupPlayerCount: $("setup-player-count"), setupShareCode: $("setup-share-code"), dashboard: $("dashboard"), heading: $("game-heading"), settingsSummary: $("settings-summary"), phaseHint: $("phase-hint")
   };
   const rememberedName = localStorage.getItem("forest-mines-name");
   if (rememberedName) ui.name.value = rememberedName;
@@ -57,18 +57,17 @@
     if (!raw) return "";
     return raw.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:").replace(/\/$/, "");
   }
-  function chosenSettings() {
+  function chosenSettings(inRoom = false) {
+    const error = inRoom ? $("setup-error") : ui.error;
     const config = { width: Number($("board-width").value), height: Number($("board-height").value), mines: Number($("mine-total").value), flags: Number($("flag-total").value) };
     const total = config.width * config.height;
     if (![config.width, config.height, config.mines, config.flags].every(Number.isInteger) || config.width < 8 || config.width > 30 || config.height < 8 || config.height > 30 || config.mines < 1 || config.mines >= total || config.flags < 1 || config.flags > total) {
-      showError("Размер поля: от 8 до 30 клеток по каждой стороне. Укажи допустимое число мин и флажков."); return null;
+      error.textContent = "Размер поля: от 8 до 30 клеток по каждой стороне. Укажи допустимое число мин и флажков."; return null;
     }
-    showError(""); return config;
+    error.textContent = ""; return config;
   }
-  function enterRoom(code, makeNew, config = null) {
+  function enterRoom(code, makeNew) {
     const name = cleanName(); if (!name) return;
-    if (makeNew && !config) config = chosenSettings();
-    if (makeNew && !config) return;
     const api = apiAddress();
     if (!api) { showError("Сервер комнаты ещё не подключён. Пока можно сыграть одному против лесного духа."); return; }
     roomId = code;
@@ -83,7 +82,7 @@
     try {
       socket = new WebSocket(`${protocol}//${host}/api/room/${encodeURIComponent(roomId)}?create=${makeNew ? "1" : "0"}`);
     } catch (_) { [$("create-room"), $("join-room")].forEach(b => b.disabled = false); showError("Не удалось открыть соединение. Проверь адрес сервера."); return; }
-    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "join", id: myId, token: myToken, name, create: makeNew, config })));
+    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "join", id: myId, token: myToken, name, create: makeNew })));
     socket.addEventListener("message", event => {
       let message; try { message = JSON.parse(event.data); } catch (_) { return; }
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
@@ -93,7 +92,7 @@
         if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${message.room}`, myToken); }
         myId = message.me; roomId = message.room; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
-        if (game.phase === "lobby") setStatus(game.hostId === myId ? "Комната открыта: дождись друзей и нажми «Начать партию»." : "Ты в лобби. Игра начнётся, когда ведущий нажмёт кнопку старта.");
+        if (game.phase === "lobby") setStatus(game.hostId === myId ? "Комната открыта. Друзья могут присоединяться; выбери поле, когда будете готовы." : "Ты в лобби. Ждём, пока ведущий создаст поле.");
       }
     });
     socket.addEventListener("close", () => { if (game && !solo) { setStatus("Связь с комнатой прервалась. Проверь интернет и зайди ещё раз.", "hit"); notify("Соединение закрыто"); } });
@@ -164,6 +163,22 @@
   }
   function draw() {
     if (!game) return;
+    if (game.phase === "lobby" || !game.config) {
+      const isHost = game.hostId === myId;
+      ui.roomSetup.classList.remove("hidden"); ui.dashboard.classList.add("hidden");
+      ui.hostSettings.classList.toggle("hidden", !isHost); ui.guestWaiting.classList.toggle("hidden", isHost); ui.createBoard.classList.toggle("hidden", !isHost);
+      ui.copyLink.disabled = false; ui.copyLink.textContent = "Пригласить ↗"; ui.heading.textContent = "Комната · ждём поле";
+      ui.setupShareCode.textContent = roomId; ui.setupPlayerCount.textContent = `${game.players.filter(p => p.online !== false).length} / ${MAX_PLAYERS}`;
+      ui.setupPlayers.replaceChildren();
+      for (const player of game.players) {
+        const row = document.createElement("li"), avatar = document.createElement("span"), details = document.createElement("span"), name = document.createElement("span"), role = document.createElement("span");
+        row.className = "player-row"; avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); avatar.style.color = player.color || PLAYER_COLORS[0];
+        details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.online === false ? " · вышел" : ""); role.className = "player-sub"; role.textContent = player.id === game.hostId ? "ведущий" : "ожидает старта";
+        details.append(name, role); row.append(avatar, details); ui.setupPlayers.append(row);
+      }
+      return;
+    }
+    ui.roomSetup.classList.add("hidden"); ui.dashboard.classList.remove("hidden"); ui.heading.textContent = game.over ? "Итоги партии" : "Чьи флажки точнее?";
     const { width, height, mines, flags } = game.config;
     const safeCount = width * height - mines;
     ui.board.replaceChildren();
@@ -198,7 +213,6 @@
     ui.flagsLeft.textContent = Math.max(0, flags - (me?.flags.length || 0)); ui.flagCap.textContent = flags;
     ui.playerCount.textContent = `${game.players.filter(p => p.online !== false).length} / ${MAX_PLAYERS}`;
     ui.settingsSummary.textContent = `${width} × ${height}  ·  ${mines} мин  ·  ${flags} флажков каждому`;
-    ui.start.classList.toggle("hidden", game.phase !== "lobby" || game.hostId !== myId);
     ui.copyLink.disabled = game.phase !== "lobby";
     ui.copyLink.textContent = game.phase === "lobby" ? "Пригласить ↗" : "Набор закрыт";
     ui.phaseHint.textContent = game.phase === "lobby" ? "ИГРОКИ МОГУТ ВОЙТИ ПО ССЫЛКЕ, ПОКА КОМНАТА В ЛОББИ" : game.phase === "over" ? "МИНЫ ОТКРЫТЫ · РЕЗУЛЬТАТ ПАРТИИ ПОДСЧИТАН" : "ВХОД ЗАКРЫТ · ПАРТИЯ УЖЕ НАЧАЛАСЬ";
@@ -247,16 +261,16 @@
     return [...found];
   }
   function makeRoomCode() { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""); }
-  $("create-room").addEventListener("click", () => { const config = chosenSettings(); if (config) enterRoom(makeRoomCode(), true, config); });
+  $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { const config = chosenSettings(); if (!config || !cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo", PRESETS.medium); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
     const config = PRESETS[button.dataset.preset];
     $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; $("flag-total").value = config.flags;
-    document.querySelectorAll("[data-preset]").forEach(item => item.classList.toggle("selected", item === button)); showError("");
+    document.querySelectorAll("[data-preset]").forEach(item => item.classList.toggle("selected", item === button)); showError(""); $("setup-error").textContent = "";
   });
-  for (const id of ["board-width", "board-height", "mine-total", "flag-total"]) $(id).addEventListener("input", () => document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")));
-  ui.start.addEventListener("click", () => { if (socket && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start" })); });
+  for (const id of ["board-width", "board-height", "mine-total", "flag-total"]) $(id).addEventListener("input", () => { document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; });
+  ui.createBoard.addEventListener("click", () => { const config = chosenSettings(true); if (socket && config && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start", config })); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   $("leave-room").addEventListener("click", () => teardown());
   $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });

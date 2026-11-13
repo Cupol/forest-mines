@@ -29,33 +29,45 @@
         <div class="card-heading"><span class="eyebrow">СТАРАЯ ЛЕСНАЯ СТОЛОВАЯ</span><span class="seal">01 / 03</span></div>
         <label class="field-label" for="player-name">ТВОЁ ИМЯ</label>
         <input id="player-name" maxlength="20" placeholder="Смотритель" autocomplete="nickname">
-        <div class="settings-heading"><span>РАЗМЕР ПАРТИИ</span><span>ГОТОВЫЕ НАБОРЫ</span></div>
-        <div class="preset-grid" role="group" aria-label="Готовый размер партии">
-          <button class="preset-button" type="button" data-preset="small"><b>Малая</b><span>2–4 игрока</span><small>12 × 12 · 18 мин · 9 флажков</small></button>
-          <button class="preset-button selected" type="button" data-preset="medium"><b>Средняя</b><span>5–10 игроков</span><small>16 × 16 · 33 мины · 17 флажков</small></button>
-          <button class="preset-button" type="button" data-preset="large"><b>Большая</b><span>11–20 игроков</span><small>24 × 24 · 75 мин · 30 флажков</small></button>
-        </div>
-        <div class="custom-settings" aria-label="Настройки своей игры">
-          <label>Ширина<input id="board-width" type="number" min="8" max="30" value="16"></label>
-          <label>Высота<input id="board-height" type="number" min="8" max="30" value="16"></label>
-          <label>Мины<input id="mine-total" type="number" min="1" max="899" value="33"></label>
-          <label>Флажки игроку<input id="flag-total" type="number" min="1" max="900" value="17"></label>
-        </div>
         <button id="create-room" class="button button-primary"><span>Создать комнату</span><span>↗</span></button>
         <div class="divider"><span>или присоединиться</span></div>
         <div class="join-line"><input id="room-code" maxlength="6" placeholder="КОД КОМНАТЫ" aria-label="Код комнаты"><button id="join-room" class="button button-quiet" aria-label="Войти по коду">Войти <span>→</span></button></div>
         <button id="solo-start" class="text-button">Остаться и сыграть с лесным духом <span>→</span></button>
         <p class="lobby-error" id="lobby-error" role="alert"></p>
       </section>
-      <div class="bottom-note"><span>ПОЛЕ ОТ 8 × 8 ДО 30 × 30</span><span>НАСТРОЙКИ ДО СТАРТА</span><span>ДО 20 ИГРОКОВ</span></div>
+      <div class="bottom-note"><span>ПОЛЕ ОТ 8 × 8 ДО 30 × 30</span><span>НАСТРОЙКИ В ЛОББИ</span><span>ДО 20 ИГРОКОВ</span></div>
     </section>
 
     <section class="game hidden" id="game">
       <header class="game-head card">
-        <div class="game-title"><div class="eyebrow">СТОЛОВАЯ · ПАРТИЯ <span id="room-label">#----</span></div><h2>Чьи флажки точнее?</h2></div>
-        <div class="head-actions"><button id="start-game" class="button button-primary start-game hidden">Начать партию</button><button id="copy-link" class="button button-quiet">Пригласить ↗</button><button id="leave-room" class="icon-button" aria-label="Вернуться в меню">×</button></div>
+        <div class="game-title"><div class="eyebrow">СТОЛОВАЯ · КОМНАТА <span id="room-label">#----</span></div><h2 id="game-heading">Ожидаем игроков</h2></div>
+        <div class="head-actions"><button id="copy-link" class="button button-quiet">Пригласить ↗</button><button id="leave-room" class="icon-button" aria-label="Вернуться в меню">×</button></div>
       </header>
-      <div class="dashboard">
+      <section id="room-setup" class="room-setup hidden">
+        <div class="room-setup-card card">
+          <div id="host-settings">
+            <div class="card-heading"><span class="eyebrow">СОЗДАЙ ИГРОВОЕ ПОЛЕ</span><span class="seal">НАСТРОЙКИ ХОСТА</span></div>
+            <p class="setup-description">Друзья уже могут входить в комнату. Выбери размер и нажми кнопку — поле создастся, партия начнётся, вход закроется.</p>
+            <div class="settings-heading"><span>РАЗМЕР ПАРТИИ</span><span>ГОТОВЫЕ НАБОРЫ</span></div>
+            <div class="preset-grid" role="group" aria-label="Готовый размер партии">
+              <button class="preset-button" type="button" data-preset="small"><b>Малая</b><span>2–4 игрока</span><small>12 × 12 · 18 мин · 9 флажков</small></button>
+              <button class="preset-button selected" type="button" data-preset="medium"><b>Средняя</b><span>5–10 игроков</span><small>16 × 16 · 33 мины · 17 флажков</small></button>
+              <button class="preset-button" type="button" data-preset="large"><b>Большая</b><span>11–20 игроков</span><small>24 × 24 · 75 мин · 30 флажков</small></button>
+            </div>
+            <div class="custom-settings" aria-label="Настройки своей игры">
+              <label>Ширина<input id="board-width" type="number" min="8" max="30" value="16"></label>
+              <label>Высота<input id="board-height" type="number" min="8" max="30" value="16"></label>
+              <label>Мины<input id="mine-total" type="number" min="1" max="899" value="33"></label>
+              <label>Флажки игроку<input id="flag-total" type="number" min="1" max="900" value="17"></label>
+            </div>
+            <button id="create-board" class="button button-primary create-board">Создать поле и начать партию <span>↗</span></button>
+            <p class="lobby-error" id="setup-error" role="alert"></p>
+          </div>
+          <div id="guest-waiting" class="guest-waiting hidden"><span class="eyebrow">ЛОББИ · ПОЛЕ ЕЩЁ НЕ СОЗДАНО</span><h3>Ждём ведущего</h3><p>Можно присоединиться к комнате и дождаться начала. Ведущий выберет поле и запустит партию.</p></div>
+        </div>
+        <aside class="room-roster card"><div class="panel-title"><span>УЖЕ В КОМНАТЕ</span><span id="setup-player-count">1 / 20</span></div><ol id="setup-players" class="players-list"></ol><div class="setup-share"><span>КОД ДРУЗЬЯМ</span><strong id="setup-share-code">------</strong></div></aside>
+      </section>
+      <div class="dashboard hidden" id="dashboard">
         <aside class="players-panel card"><div class="panel-title"><span>ЗА СТОЛОМ</span><span id="player-count">1 / 20</span></div><div id="settings-summary" class="settings-summary"></div><ol id="players-list" class="players-list"></ol><div class="your-resources"><span>СВОБОДНО ФЛАЖКОВ</span><strong><span id="flags-left">17</span><small> / <b id="flag-cap">17</b></small></strong><p>Можно поставить до лимита личных флажков. Снял свой — место освободилось. Мины откроются в конце.</p></div><div class="legend"><span><i class="legend-mine"></i> мина (в конце)</span><span><i class="legend-flag">⚑</i> цветная метка игрока</span></div></aside>
         <section class="board-panel card">
           <div class="board-toolbar"><div><span class="eyebrow">ОБЩЕЕ ПОЛЕ</span><div class="board-subtitle"><span id="safe-count">223</span> безопасных клеток · <span id="mine-count">33</span> мин</div></div><div class="board-controls"><span class="action-hint">ЛКМ — открыть&nbsp; · &nbsp;ПКМ — флажок</span><button id="flag-mode" class="button button-quiet flag-mode" aria-pressed="false">⚑ Флажок</button></div></div>

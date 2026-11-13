@@ -9,7 +9,7 @@ interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number }
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
 interface Player { id: string; token: string; name: string; score: number; color: string; flags: number[]; online: boolean }
-interface Game { config: GameConfig; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; event: { kind: string; name: string; id: string } | null }
+interface Game { config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
 function neighbours(i: number, config: GameConfig): number[] {
@@ -38,7 +38,7 @@ function safeConfig(value: unknown): GameConfig {
   const flags = Math.max(1, Math.min(total, Math.round(Number(candidate.flags) || DEFAULT_CONFIG.flags)));
   return { width, height, mines, flags };
 }
-function freshGame(config: GameConfig): Game { return { config, cells: randomBoard(config), players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null }; }
+function freshGame(): Game { return { config: null, cells: [], players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null }; }
 function stripSecrets(game: Game, me: Player) {
   return {
     type: "state", room: "", me: me.id,
@@ -73,7 +73,7 @@ export class GameRoom extends DurableObject<Env> {
     this.init = ctx.blockConcurrencyWhile(async () => {
       this.game = await ctx.storage.get<Game>("game") ?? null;
       if (this.game) {
-        this.game.config ??= { ...DEFAULT_CONFIG };
+        if (!this.game.config && this.game.cells.length) this.game.config = { ...DEFAULT_CONFIG };
         this.game.phase ??= this.game.over ? "over" : "playing";
         this.game.hostId ??= this.game.players[0]?.id ?? "";
         this.game.players.forEach((player, index) => { player.token ??= crypto.randomUUID(); player.color ??= PLAYER_COLORS[index % PLAYER_COLORS.length]; player.flags ??= []; player.score ??= 0; });
@@ -113,6 +113,8 @@ export class GameRoom extends DurableObject<Env> {
       if (!attachment?.id || !this.game.players.some(p => p.id === attachment.id)) return;
       if (packet.type === "start") {
         if (this.game.phase !== "lobby" || this.game.hostId !== attachment.id) return;
+        const config = safeConfig(packet.config);
+        this.game.config = config; this.game.cells = randomBoard(config); this.game.safe = 0;
         this.game.phase = "playing"; this.game.event = { kind: "started", name: "", id: attachment.id };
         await this.publish(); return;
       }
@@ -127,15 +129,17 @@ export class GameRoom extends DurableObject<Env> {
         if (already >= 0) player.flags.splice(already, 1);
         else {
           if (cell.open) return;
-          if (player.flags.length >= this.game.config.flags) { socket.send(JSON.stringify({ type: "notice", text: `На поле можно поставить не больше ${this.game.config.flags} своих флажков. Сними один, чтобы поставить другой.` })); return; }
+          const flagLimit = this.game.config?.flags ?? DEFAULT_CONFIG.flags;
+          if (player.flags.length >= flagLimit) { socket.send(JSON.stringify({ type: "notice", text: `На поле можно поставить не больше ${flagLimit} своих флажков. Сними один, чтобы поставить другой.` })); return; }
           player.flags.push(index);
         }
       } else {
         if (cell.open) return;
         if (!cell.mine) {
           const opened = new Set([index]), queue = [index];
-          while (queue.length) { const next = queue.shift()!; this.game.cells[next].open = true; this.game.cells[next].by = player.name; this.game.safe++; if (this.game.cells[next].near) continue; for (const neighbour of neighbours(next, this.game.config)) if (!this.game.cells[neighbour].open && !this.game.cells[neighbour].mine && !opened.has(neighbour)) { opened.add(neighbour); queue.push(neighbour); } }
-          if (this.game.safe >= this.game.config.width * this.game.config.height - this.game.config.mines) this.finishIfDone();
+          const config = this.game.config ?? DEFAULT_CONFIG;
+          while (queue.length) { const next = queue.shift()!; this.game.cells[next].open = true; this.game.cells[next].by = player.name; this.game.safe++; if (this.game.cells[next].near) continue; for (const neighbour of neighbours(next, config)) if (!this.game.cells[neighbour].open && !this.game.cells[neighbour].mine && !opened.has(neighbour)) { opened.add(neighbour); queue.push(neighbour); } }
+          if (this.game.safe >= config.width * config.height - config.mines) this.finishIfDone();
         }
       }
       await this.publish();
@@ -148,7 +152,7 @@ export class GameRoom extends DurableObject<Env> {
       socket.close(1008, "room not found");
       return;
     }
-    if (!this.game) this.game = freshGame(safeConfig(packet.config));
+    if (!this.game) this.game = freshGame();
     const id = /^[\w-]{8,64}$/.test(String(packet.id ?? "")) ? String(packet.id) : crypto.randomUUID();
     const token = /^[\w-]{16,100}$/.test(String(packet.token ?? "")) ? String(packet.token) : "";
     const name = safeName(packet.name);
@@ -159,7 +163,7 @@ export class GameRoom extends DurableObject<Env> {
       const usedColors = new Set(this.game.players.map(p => p.color));
       player = { id, token: token || crypto.randomUUID(), name, score: 0, color: PLAYER_COLORS.find(color => !usedColors.has(color)) ?? PLAYER_COLORS[this.game.players.length % PLAYER_COLORS.length], flags: [], online: true };
       this.game.players.push(player);
-      if (!this.game.hostId) this.game.hostId = id;
+      if (!this.game.hostId || !this.game.players.some(p => p.id === this.game!.hostId && p.online)) this.game.hostId = id;
       this.game.event = { kind: "joined", name, id };
     } else {
       if (!token || token !== player.token) { socket.send(JSON.stringify({ type: "error", message: "Не удалось подтвердить участника комнаты. Создай новую комнату или проверь ссылку." })); socket.close(1008, "invalid player token"); return; }
