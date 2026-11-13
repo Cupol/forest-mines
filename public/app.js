@@ -20,7 +20,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   if (rememberedName) ui.name.value = rememberedName;
   const savedRoom = new URLSearchParams(location.search).get("room");
   const savedMode = new URLSearchParams(location.search).get("game");
-  const modes = ["sapper", "draw", "sea"];
+  const modes = ["sapper", "draw", "sea", "typing"];
   let selectedMode = modes.includes(savedMode) ? savedMode : "sapper";
   if (savedRoom) ui.roomInput.value = savedRoom.toUpperCase().slice(0, 6);
 
@@ -33,7 +33,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     document.title = drawing ? "Рисуй и угадывай — Круг друзей" : "Сапёр — Круг друзей";
     $("game-index").textContent = `ИГРА ${modes.indexOf(selectedMode) + 1} / ${modes.length}`;
     $("landing-cap").textContent = selectedMode === "sea" ? "2 ИГРОКА" : "ДО 20 ИГРОКОВ";
-    $("solo-start").classList.toggle("hidden", selectedMode === "sea");
+    $("solo-start").classList.toggle("hidden", selectedMode === "typing");
     $("hero-eyebrow").textContent = drawing ? "СЛОВО ЗАДАНО. ТВОЯ ОЧЕРЕДЬ РИСОВАТЬ." : "ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.";
     $("hero-title").innerHTML = drawing ? "Рисуй и<br><em>угадывай</em>" : "<em>Сапёр</em>";
     $("hero-description").textContent = drawing ? "Рисуй загаданное слово, пока друзья угадывают. Очки получают самые быстрые догадчики." : "Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.";
@@ -47,6 +47,13 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       $("hero-description").textContent = "Расставьте корабли и по очереди стреляйте по полю соперника. Побеждает тот, кто первым потопит весь флот.";
       $("hero-rules").innerHTML = "<span><b>10</b> кораблей</span><span><b>10×10</b> поле</span><span><b>↻</b> попадание даёт ещё ход</span>";
       $("create-room-text").textContent = "Создать комнату";
+    }
+    if (selectedMode === "typing") {
+      document.title = "Кто быстрее напишет — Круг друзей";
+      $("hero-eyebrow").textContent = "ГОНКА ПЕЧАТИ";
+      $("hero-title").innerHTML = "Кто быстрее<br><em>напишет?</em>";
+      $("hero-description").textContent = "У всех одинаковый текст. Печатай быстро и точно, чтобы пройти в следующий раунд.";
+      $("hero-rules").innerHTML = "<span>Русские тексты и скороговорки</span><span>Раунды на выбывание</span>";
     }
   }
   let switchingGame = false;
@@ -163,6 +170,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
         selectedMode = modes.includes(message.mode) ? message.mode : "sapper";
         game = { mode: selectedMode, cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "", drawing: message.drawing, chat: message.chat || [] };
         game.sea = message.sea;
+        game.typing = message.typing;
         roomId = message.room || roomId;
         if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${roomId}`, myToken); }
         myId = message.me; ui.error.textContent = ""; showGame("online"); draw();
@@ -175,6 +183,8 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     socket.addEventListener("error", () => { [$("create-room"), $("join-room")].forEach(b => b.disabled = false); showError("Не удалось соединиться с сервером комнаты."); });
   }
   function teardown(returnToMenu = true) {
+    clearInterval(typingClock); clearTimeout(typingFlush);
+    typingEdits = []; typingRound = 0;
     clearTimeout(botTimer); clearInterval(drawClockTimer); drawClockTimer = 0;
     activeStroke = null;
     if (socket) { socket.close(); socket = null; }
@@ -381,15 +391,16 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     const ownFleet = sea?.ownFleet?.length ? sea.ownFleet : seaDraft;
     const ready = Boolean(sea?.ownFleet?.length);
     const placing = game.phase === "lobby" && !ready;
-    const myTurn = game.phase === "playing" && sea?.turn === myId && opponent?.online && socket?.readyState === WebSocket.OPEN;
+    const myTurn = game.phase === "playing" && sea?.turn === myId && opponent?.online && (solo || socket?.readyState === WebSocket.OPEN);
     ui.heading.textContent = "Морской бой";
-    ui.copyLink.disabled = false;
+    ui.copyLink.disabled = solo;
     ui.copyLink.textContent = "Пригласить ↗";
     ui.phaseHint.textContent = "КОРАБЛИ НЕ СОПРИКАСАЮТСЯ · ПОПАДАНИЕ ДАЁТ ЕЩЁ ХОД";
     $("sea-status").textContent = game.over ? "Партия завершена" : !opponent?.online ? "Ждём соперника. Можно расставить корабли заранее." :
       placing ? FLEET[seaDraft.length] ? `Поставь корабль на ${FLEET[seaDraft.length]} кл. · ${seaDraft.length}/10` : "Флот расставлен. Нажми «Готов»." :
       game.phase === "lobby" ? "Флот готов. Ждём расстановку соперника." : myTurn ? "Твой ход. Выбери клетку на поле соперника." : `Ходит ${opponent.name}.`;
     $("sea-result").textContent = game.over ? game.winnerId === myId ? "Ты победил!" : `Победил ${opponent?.name ?? "соперник"}.` : "";
+    $("sea-restart").classList.toggle("hidden", !solo || !game.over);
     $("sea-controls").classList.toggle("hidden", !placing);
     $("sea-target").classList.toggle("hidden", game.phase === "lobby");
     $("sea-ready").disabled = seaDraft.length !== FLEET.length || !opponent?.online;
@@ -408,12 +419,13 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       seaDraft.push(cells); drawSea();
     } : null);
     seaGrid("sea-enemy", enemy, myTurn ? cell => {
-      socket.send(JSON.stringify({ type: "seaFire", cell }));
+      if (solo) localSeaFire(cell, false);
+      else socket.send(JSON.stringify({ type: "seaFire", cell }));
     } : null);
   }
   $("sea-rotate").addEventListener("click", () => { seaVertical = !seaVertical; drawSea(); });
   $("sea-undo").addEventListener("click", () => { seaDraft.pop(); drawSea(); });
-  $("sea-random").addEventListener("click", () => {
+  function randomFleet() {
     let fleet = [];
     while (fleet.length !== FLEET.length) {
       fleet = [];
@@ -424,15 +436,62 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
         fleet.push(options[Math.floor(Math.random() * options.length)]);
       }
     }
-    seaDraft = fleet; drawSea();
-  });
+    return fleet;
+  }
+  $("sea-random").addEventListener("click", () => { seaDraft = randomFleet(); drawSea(); });
+  const seaBotId = "sea-bot";
+  let seaBotFleet = [];
+  function startSeaPractice() {
+    clearTimeout(botTimer);
+    solo = true; myId = "local-sea"; roomId = "БОТ";
+    seaDraft = []; seaVertical = false; seaBotFleet = randomFleet();
+    game = { mode: "sea", phase: "lobby", over: false, players: [
+      { id: myId, name: ui.name.value.trim() || "Ты", online: true },
+      { id: seaBotId, name: "Бот", online: true }
+    ] };
+    showGame("solo"); draw();
+  }
+  function localSeaFire(cell, bot) {
+    const sea = game?.sea;
+    if (game?.mode !== "sea" || !solo || game.over || sea?.turn !== (bot ? seaBotId : myId)) return;
+    const target = bot ? sea.ownFleet : seaBotFleet;
+    const shots = bot ? sea.incoming : sea.fired.map(shot => shot.cell);
+    if (shots.includes(cell)) return;
+    const hit = target.some(ship => ship.includes(cell));
+    shots.push(cell);
+    const sunk = target.filter(ship => ship.every(position => shots.includes(position)));
+    if (!bot) { sea.fired.push({ cell, hit }); sea.sunk = sunk; }
+    if (sunk.length === FLEET.length) {
+      game.over = true; game.phase = "over"; game.winnerId = bot ? seaBotId : myId;
+    } else if (!hit) sea.turn = bot ? myId : seaBotId;
+    drawSea();
+    if (!game.over && sea.turn === seaBotId) botTimer = setTimeout(seaBotMove, 480);
+  }
+  function seaBotMove() {
+    if (!solo || game?.mode !== "sea" || game.over) return;
+    const { ownFleet, incoming } = game.sea;
+    const afloat = ownFleet.filter(ship => ship.some(cell => !incoming.includes(cell))).flat();
+    const adjacent = cell => incoming.some(shot => afloat.includes(shot) &&
+      Math.abs(cell % 10 - shot % 10) + Math.abs(Math.floor(cell / 10) - Math.floor(shot / 10)) === 1);
+    const available = Array.from({ length: 100 }, (_, cell) => cell).filter(cell => !incoming.includes(cell));
+    const nearby = available.filter(adjacent);
+    const choices = nearby.length ? nearby : available;
+    localSeaFire(choices[Math.floor(Math.random() * choices.length)], true);
+  }
+  $("sea-restart").addEventListener("click", startSeaPractice);
   $("sea-ready").addEventListener("click", () => {
+    if (solo && game?.mode === "sea" && game.phase === "lobby" && seaDraft.length === FLEET.length) {
+      game.sea = { ownFleet: seaDraft, incoming: [], fired: [], sunk: [], turn: myId };
+      game.phase = "playing"; drawSea(); return;
+    }
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "seaReady", fleet: seaDraft }));
   });
 
   function draw() {
     if (!game) return;
     $("sea-dashboard").classList.toggle("hidden", game.mode !== "sea");
+    $("typing-dashboard").classList.toggle("hidden", game.mode !== "typing");
+    if (game.mode === "typing") { drawTyping(); return; }
     if (game.mode === "sea") { drawSea(); return; }
     if (game.mode === "draw") { drawDrawingGame(); return; }
     ui.drawLobby.classList.add("hidden"); ui.drawDashboard.classList.add("hidden");
@@ -499,6 +558,97 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     }
     ui.board.classList.toggle("game-over", Boolean(game.over));
   }
+  let typingClock = 0, typingFlush = 0, typingRound = 0, typingEdits = [];
+  const typingInput = $("typing-input");
+  function flushTyping() {
+    clearTimeout(typingFlush); typingFlush = 0;
+    if (typingEdits.length && game?.mode === "typing" && socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "typingInput", round: typingRound, edits: typingEdits }));
+    }
+    typingEdits = [];
+  }
+  function refreshTyping() {
+    const race = game?.typing;
+    if (!race || game.mode !== "typing") return;
+    const me = race.results.find(result => result.id === myId);
+    const countdown = Math.ceil((race.startsAt - Date.now()) / 1000);
+    const left = Math.max(0, Math.ceil((race.endsAt - Date.now()) / 1000));
+    const canType = Boolean(me && !me.finished && countdown <= 0 && left && !game.over);
+    const wasDisabled = typingInput.disabled;
+    typingInput.disabled = !canType;
+    if (canType && wasDisabled) typingInput.focus();
+    $("typing-track").classList.toggle("hidden", countdown > 0 && !game.over);
+    const status = $("typing-status");
+    if (game.over) {
+      const winner = game.players.find(player => player.id === game.winnerId);
+      status.textContent = winner ? `Победитель — ${winner.name}!` : "Гонка завершена без победителя.";
+    } else if (countdown > 0) {
+      const names = race.previous?.eliminated.map(id => game.players.find(player => player.id === id)?.name).filter(Boolean);
+      status.textContent = `${names?.length ? "Выбыли: " + names.join(", ") + ". " : ""}Раунд ${race.round} через ${countdown} сек.`;
+    } else status.textContent = `Раунд ${race.round} · ${left} сек. · ${!me ? "Ты наблюдаешь" : me.finished ? "Текст набран. Ждём остальных" : "Печатай"}`;
+    const fragment = document.createDocumentFragment();
+    [...race.text].forEach((char, index) => {
+      const span = document.createElement("span");
+      span.textContent = char;
+      const typed = typingInput.value[index];
+      if (typed !== undefined) span.className = typed === char ? "typing-correct" : "typing-error";
+      else if (index === typingInput.value.length && canType) span.className = "typing-current";
+      fragment.append(span);
+    });
+    $("typing-prompt").replaceChildren(fragment);
+  }
+  function drawTyping() {
+    for (const panel of [ui.roomSetup, ui.dashboard, ui.drawLobby, ui.drawDashboard]) panel.classList.add("hidden");
+    ui.heading.textContent = "Кто быстрее напишет?";
+    ui.copyLink.disabled = game.phase !== "lobby"; ui.copyLink.textContent = "Пригласить ↗";
+    ui.phaseHint.textContent = "РЕЗУЛЬТАТ УЧИТЫВАЕТ СКОРОСТЬ И ТОЧНОСТЬ";
+    const race = game.typing, start = $("typing-start");
+    const online = game.players.filter(player => player.online);
+    start.classList.toggle("hidden", game.phase !== "lobby" || game.hostId !== myId);
+    start.disabled = online.length < 2;
+    clearInterval(typingClock);
+    const results = $("typing-results");
+    results.replaceChildren();
+    $("typing-previous").classList.toggle("hidden", !race?.previous);
+    const previous = $("typing-previous-results");
+    previous.replaceChildren();
+    for (const entry of race?.previous?.ranked ?? []) {
+      const row = document.createElement("li");
+      const name = game.players.find(player => player.id === entry.id)?.name ?? "Игрок";
+      row.textContent = `${name} · ${Math.round(entry.speed)} зн./мин · ${Math.round(entry.accuracy * 100)}% точности · ${race.previous.eliminated.includes(entry.id) ? "выбыл" : "прошёл дальше"}`;
+      previous.append(row);
+    }
+    if (!race) {
+      $("typing-track").classList.add("hidden");
+      $("typing-status").textContent = online.length < 2 ? "Пригласи хотя бы одного игрока." : "Ведущий может начать гонку.";
+      for (const player of online) { const row = document.createElement("li"); row.textContent = player.name; results.append(row); }
+      return;
+    }
+    if (race.round !== typingRound) {
+      typingRound = race.round; typingEdits = []; clearTimeout(typingFlush); typingFlush = 0;
+      typingInput.value = race.value;
+      typingInput.maxLength = race.text.length;
+    }
+    for (const entry of race.results) {
+      const row = document.createElement("li");
+      const name = game.players.find(player => player.id === entry.id)?.name ?? "Игрок";
+      row.textContent = `${name} · ${entry.correct}/${race.text.length} · ${Math.round(entry.speed)} зн./мин · ${Math.round(entry.accuracy * 100)}% точности`;
+      results.append(row);
+    }
+    refreshTyping();
+    if (!game.over) typingClock = setInterval(refreshTyping, 250);
+  }
+  $("typing-start").addEventListener("click", () => {
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "typingStart" }));
+  });
+  for (const event of ["paste", "drop"]) typingInput.addEventListener(event, e => e.preventDefault());
+  typingInput.addEventListener("input", () => {
+    if (typingInput.disabled || game?.mode !== "typing") return;
+    typingEdits.push(typingInput.value);
+    if (typingEdits.length >= 24 || typingInput.value === game.typing.text) flushTyping();
+    else if (!typingFlush) typingFlush = setTimeout(flushTyping, 160);
+    refreshTyping();
+  });
   function currentPlayer() { return game?.players.find(p => p.id === myId); }
   function scheduleBot(delay) { clearTimeout(botTimer); if (solo && !game.over) botTimer = setTimeout(botTurn, delay); }
   function botTurn() {
@@ -603,7 +753,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   $("practice-restart").addEventListener("click", () => startDrawingPractice(practiceRole));
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (selectedMode === "sea") { startSeaPractice(); return; } if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   $("game-prev").addEventListener("click", () => changeGame(-1));
   $("game-next").addEventListener("click", () => changeGame(1));
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {

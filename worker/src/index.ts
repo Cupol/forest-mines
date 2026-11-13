@@ -9,7 +9,49 @@ const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#
 
 interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number }
-type GameMode = "sapper" | "draw" | "sea";
+type GameMode = "sapper" | "draw" | "sea" | "typing";
+const TYPING_TEXTS = [
+  "Карл у Клары украл кораллы, а Клара у Карла украла кларнет. Кларнет звучал так громко, что на музыку сбежались все соседи.",
+  "На дворе трава, на траве дрова. Не руби дрова на траве двора. Лучше сложи их у сарая, пока вечерний дождь не намочил поленья.",
+  "Утром на набережной было тихо. Рыбаки распутывали леску, чайки кружили над водой, а первый трамвай уже звенел на повороте.",
+  "Шла Саша по шоссе и сосала сушку. Потом она свернула к озеру, села на деревянную скамейку и стала считать уток.",
+  "На кухне пахло яблоками и корицей. За окном падал снег, и каждый прохожий оставлял на дорожке цепочку свежих следов.",
+  "Три сороки сели на забор. Первая громко затрещала, вторая перепрыгнула на ветку, а третья утащила блестящую пуговицу.",
+  "К вечеру ветер стих. На песке остались только следы босых ног, а у самой воды покачивалась пустая лодка.",
+  "Корабли лавировали, лавировали, да так и не вылавировали. Капитан убрал карту и попросил команду проверить компас.",
+  "Рано утром булочник открыл дверь. Запах свежего хлеба разошёлся по улице, и к витрине сразу подошли первые покупатели.",
+  "У четырёх черепах по четыре черепашонка. Они медленно ползли к пруду и остановились под широким листом лопуха."
+];
+interface TypingEntry { value: string; attempts: number; errors: number; finishedAt: number }
+interface TypingRace {
+  text: string; startsAt: number; endsAt: number; round: number;
+  entries: Record<string, TypingEntry>;
+  used: string[];
+  previous: { ranked: TypingResult[]; eliminated: string[] } | null;
+}
+interface TypingResult { id: string; correct: number; accuracy: number; speed: number; finished: boolean }
+
+function typingResults(race: TypingRace, now: number): TypingResult[] {
+  return Object.entries(race.entries).map(([id, entry]) => {
+    const correct = [...entry.value].filter((char, i) => char === race.text[i]).length;
+    const accuracy = entry.attempts ? (entry.attempts - entry.errors) / entry.attempts : 0;
+    const seconds = Math.max(1, (Math.min(entry.finishedAt || now, race.endsAt) - race.startsAt) / 1000);
+    return { id, correct, accuracy, speed: correct * 60 / seconds, finished: Boolean(entry.finishedAt) };
+  }).sort((a, b) => Number(b.finished) - Number(a.finished) ||
+    b.speed * b.accuracy - a.speed * a.accuracy || b.correct - a.correct || b.accuracy - a.accuracy);
+}
+
+function nextTypingRound(ids: string[], prior?: TypingRace): TypingRace {
+  const used = prior?.used ?? [];
+  const available = TYPING_TEXTS.filter(text => !used.includes(text));
+  const text = available[crypto.getRandomValues(new Uint32Array(1))[0] % available.length];
+  const startsAt = Date.now() + (prior ? 7000 : 3000);
+  return {
+    text, startsAt, endsAt: startsAt + 120000, round: (prior?.round ?? 0) + 1,
+    entries: Object.fromEntries(ids.map(id => [id, { value: "", attempts: 0, errors: 0, finishedAt: 0 }])),
+    used: [...used, text], previous: prior?.previous ?? null
+  };
+}
 interface SeaGame {
   fleets: Record<string, number[][]>;
   shots: Record<string, number[]>;
@@ -20,7 +62,7 @@ interface Player { id: string; token: string; name: string; score: number; explo
 interface Stroke { color: string; size: number; tool?: "pen" | "line" | "eraser"; opacity?: number; points: { x: number; y: number }[] }
 interface ChatLine { id: string; kind: "chat" | "system"; name: string; text: string; at: number }
 interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; stage: "choosing" | "drawing"; choices: string[]; offeredWords?: string[]; revealedIndices: number[]; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
-interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
+interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; typing?: TypingRace; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
 function normalizeWord(value: unknown): string { return String(value ?? "").toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, ""); }
@@ -76,6 +118,12 @@ function safeConfig(value: unknown): GameConfig {
 }
 function freshGame(mode: GameMode = "sapper"): Game { return { mode, config: null, cells: [], players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null, chat: [] }; }
 function stripSecrets(game: Game, me: Player) {
+  const typing = game.typing;
+  const publicTyping = typing ? {
+    text: typing.text, startsAt: typing.startsAt, endsAt: typing.endsAt, round: typing.round,
+    value: typing.entries[me.id]?.value ?? "",
+    results: typingResults(typing, Date.now()), previous: typing.previous
+  } : null;
   const sea = game.sea;
   const opponent = game.players.find(player => player.id !== me.id);
   const enemyFleet = sea?.fleets[opponent?.id ?? ""] ?? [];
@@ -97,7 +145,7 @@ function stripSecrets(game: Game, me: Player) {
     startedAt: drawing.startedAt, endsAt: drawing.endsAt, strokes: drawing.strokes, guessedPlayers: drawing.guessedPlayers,
   } : null;
   return {
-    type: "state", room: "", me: me.id, mode: game.mode ?? "sapper", sea: publicSea,
+    type: "state", room: "", me: me.id, mode: game.mode ?? "sapper", sea: publicSea, typing: publicTyping,
     cells: game.cells.map(c => c.open || game.over ? { open: true, mine: c.mine, near: c.near, boom: c.boom, by: c.by } : { open: false }),
     players: game.players.map(({ id, name, score, explosions, color, flags, online }) => ({ id, name, score: game.mode === "draw" || game.over ? score : 0, explosions, color, flags, online })),
     drawing: publicDrawing, chat: game.chat ?? [], config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, winnerId: game.winnerId ?? "", event: game.event,
@@ -162,6 +210,7 @@ export class GameRoom extends DurableObject<Env> {
       if (this.ctx.getWebSockets().filter(ws => ws.readyState === WebSocket.OPEN).length >= MAX_PLAYERS) return new Response("За столом уже 20 игроков.", { status: 429 });
       await this.ctx.storage.put("roomCode", this.roomCode);
       if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1, this.game.drawing.endsAt));
+      else if (this.game?.mode === "typing" && this.game.phase === "playing" && this.game.typing) await this.ctx.storage.setAlarm(this.game.typing.endsAt);
       else await this.ctx.storage.deleteAlarm();
       const pair = new WebSocketPair();
       const client = pair[0], server = pair[1];
@@ -182,6 +231,7 @@ export class GameRoom extends DurableObject<Env> {
       if (!this.game) return;
       if (!attachment?.id || !this.game.players.some(p => p.id === attachment.id)) return;
       if (this.game.mode === "sea") { await this.handleSeaPacket(attachment.id, packet); return; }
+      if (this.game.mode === "typing") { await this.handleTypingPacket(attachment.id, packet); return; }
       if (packet.type === "start") {
         if (this.game.phase !== "lobby" || this.game.hostId !== attachment.id) return;
         if ((this.game.mode ?? "sapper") === "draw") { await this.startDrawing(socket, attachment.id); return; }
@@ -348,6 +398,63 @@ export class GameRoom extends DurableObject<Env> {
     }
   }
 
+  private async finishTyping() {
+    const game = this.game;
+    const race = game?.typing;
+    if (!game || !race || game.over) return;
+    const ranked = typingResults(race, race.endsAt);
+    if (ranked.length > 2) {
+      const survivors = ranked.length - Math.min(ranked.length - 2, Math.ceil(ranked.length / 4));
+      race.previous = { ranked, eliminated: ranked.slice(survivors).map(result => result.id) };
+      game.typing = nextTypingRound(ranked.slice(0, survivors).map(result => result.id), race);
+      await this.ctx.storage.setAlarm(game.typing.endsAt);
+      await this.publish();
+      return;
+    }
+    game.winnerId = ranked[0]?.correct ? ranked[0].id : "";
+    game.phase = "over"; game.over = true;
+    await this.ctx.storage.deleteAlarm();
+    await this.publish();
+  }
+
+  private async handleTypingPacket(playerId: string, packet: Record<string, unknown>) {
+    const game = this.game;
+    if (!game) return;
+    if (packet.type === "typingStart" && game.phase === "lobby" && game.hostId === playerId) {
+      const players = game.players.filter(player => player.online);
+      if (players.length < 2) return;
+      game.typing = nextTypingRound(players.map(player => player.id));
+      game.phase = "playing";
+      await this.ctx.storage.setAlarm(game.typing.endsAt);
+      await this.publish();
+      return;
+    }
+    const race = game.typing;
+    if (!race || game.phase !== "playing") return;
+    const now = Date.now();
+    if (now >= race.endsAt) { await this.finishTyping(); return; }
+    if (now < race.startsAt || packet.round !== race.round || packet.type !== "typingInput" ||
+        !Array.isArray(packet.edits) || packet.edits.length > 24) return;
+    const entry = race.entries[playerId];
+    if (!entry || entry.finishedAt) return;
+    for (const value of packet.edits) {
+      if (typeof value !== "string" || value.length > race.text.length || value === entry.value) continue;
+      let prefix = 0, suffix = 0;
+      while (prefix < Math.min(value.length, entry.value.length) && value[prefix] === entry.value[prefix]) prefix++;
+      while (suffix < Math.min(value.length, entry.value.length) - prefix &&
+             value[value.length - suffix - 1] === entry.value[entry.value.length - suffix - 1]) suffix++;
+      if (value.length - suffix - prefix > 1) continue;
+      for (let index = prefix; index < value.length - suffix; index++) {
+        entry.attempts++;
+        if (value[index] !== race.text[index]) entry.errors++;
+      }
+      entry.value = value;
+      if (value === race.text) { entry.finishedAt = now; break; }
+    }
+    if (Object.values(race.entries).every(result => result.finishedAt)) await this.finishTyping();
+    else await this.publish();
+  }
+
   private async handleSeaPacket(playerId: string, packet: Record<string, unknown>) {
     const game = this.game;
     if (!game || game.over) return;
@@ -384,7 +491,7 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async join(socket: WebSocket, packet: Record<string, unknown>) {
-    const requestedMode: GameMode = packet.mode === "draw" || packet.mode === "sea" ? packet.mode : "sapper";
+    const requestedMode: GameMode = packet.mode === "draw" || packet.mode === "sea" || packet.mode === "typing" ? packet.mode : "sapper";
     if (!this.game && packet.create !== true) {
       socket.send(JSON.stringify({ type: "error", message: "Комната не найдена. Проверь код или создай новую." }));
       socket.close(1008, "room not found");
@@ -467,6 +574,10 @@ export class GameRoom extends DurableObject<Env> {
       if (!this.ctx.getWebSockets().some(ws => ws.readyState === WebSocket.OPEN)) { this.game = null; await this.ctx.storage.deleteAll(); return; }
       if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) {
         if (!(await this.advanceDrawDeadline())) await this.ctx.storage.setAlarm(this.game.drawing.endsAt);
+      }
+      if (this.game?.mode === "typing" && this.game.phase === "playing" && this.game.typing) {
+        if (Date.now() >= this.game.typing.endsAt) await this.finishTyping();
+        else await this.ctx.storage.setAlarm(this.game.typing.endsAt);
       }
     });
   }

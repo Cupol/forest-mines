@@ -70,6 +70,17 @@ body[data-game="sea"] .button-primary{background:#8ad9e9;color:#092331;border-co
 .sea-cell.sea-miss{background:#102c3c;color:#a4d6ed}
 .sea-cell.sea-hit{background:#954f49}
 .sea-cell.sea-sunk{background:#b4513b}
+body[data-game="typing"]{background:#251b15;--gold:#ffc486;--green:#ffc486;--line:#765338}
+body[data-game="typing"] .card{background:#38291f;border-color:#765338}
+body[data-game="typing"] .button-primary{background:#ffc486;color:#2b1b0e;border-color:#ffd2a4}
+.typing-panel{margin-top:14px;padding:clamp(14px,4vw,30px)}
+#typing-prompt,#typing-input{font:clamp(15px,2.3vw,22px)/1.65 var(--mono);overflow-wrap:anywhere}
+#typing-prompt{color:#e9d9ca}
+#typing-input{display:block;width:100%;box-sizing:border-box;margin:8px 0;padding:10px;border:1px solid #947051;border-radius:8px;background:#211912;color:#fff3e3}
+.typing-correct{color:#a9e5ad}
+.typing-error{color:#ffb1a5;background:#632e29;text-decoration:underline}
+.typing-current{border-bottom:2px solid #ffc486}
+#typing-results,#typing-previous-results{line-height:1.7;padding-inline-start:22px}
 #sea-result{color:#a4e6f1;font-weight:700}
 @media(max-width:600px){.sea-boards{grid-template-columns:minmax(0,390px)}}
 @media(prefers-reduced-motion:reduce){.landing.game-entering .intro>:not(.game-switch),.landing.game-entering .lobby,.landing.game-entering .bottom-note{opacity:1;transform:none}}

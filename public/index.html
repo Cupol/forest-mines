@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101817">
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
-  <link rel="stylesheet" href="style.css?v=sea-1">
+  <link rel="stylesheet" href="style.css?v=typing-1">
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=sea-1"></script>
+  <script type="module" src="app.js?v=typing-1"></script>
 </head>
 <body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -81,6 +81,20 @@
         </div>
         <aside class="room-roster card"><div class="panel-title"><span>УЖЕ В КОМНАТЕ</span><span id="draw-lobby-player-count">1 / 20</span></div><ol id="draw-lobby-players" class="players-list"></ol><div class="setup-share"><span>КОД ДРУЗЬЯМ</span><strong id="draw-lobby-code">------</strong></div></aside>
       </section>
+      <section id="typing-dashboard" class="card typing-panel hidden">
+        <p id="typing-status" role="status"></p>
+        <button id="typing-start" class="button button-primary" type="button">Начать гонку</button>
+        <div id="typing-track" class="hidden">
+          <p id="typing-prompt"></p>
+          <label for="typing-input">Напечатай текст</label>
+          <textarea id="typing-input" rows="4" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+        </div>
+        <ul id="typing-results"></ul>
+        <details id="typing-previous" class="hidden">
+          <summary>Итоги прошлого раунда</summary>
+          <ol id="typing-previous-results"></ol>
+        </details>
+      </section>
       <section id="sea-dashboard" class="card sea-panel hidden">
         <p id="sea-status" role="status"></p>
         <div id="sea-controls" class="head-actions sea-controls">
@@ -94,6 +108,7 @@
           <section id="sea-target"><h3>Поле соперника</h3><div id="sea-enemy" class="sea-grid"></div></section>
         </div>
         <p id="sea-result" role="status"></p>
+        <button id="sea-restart" class="button hidden" type="button">Новая партия с ботом</button>
       </section>
       <section id="draw-dashboard" class="draw-layout hidden">
         <div class="draw-main card">
