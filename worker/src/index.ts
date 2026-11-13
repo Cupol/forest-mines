@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { DRAW_WORDS } from "./draw-words";
 
 const DEFAULT_CONFIG: GameConfig = { width: 16, height: 16, mines: 33, flags: 17 };
 const MAX_PLAYERS = 20;
@@ -12,11 +13,10 @@ interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: 
 interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean }
 interface Stroke { color: string; size: number; tool?: "pen" | "line" | "eraser"; opacity?: number; points: { x: number; y: number }[] }
 interface ChatLine { id: string; kind: "chat" | "system"; name: string; text: string; at: number }
-interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; stage: "choosing" | "drawing"; choices: string[]; revealedIndices: number[]; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
+interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; stage: "choosing" | "drawing"; choices: string[]; offeredWords?: string[]; revealedIndices: number[]; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
 interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
-const DRAW_WORDS = ["берёза", "фонарь", "гриб", "лягушка", "самокат", "космонавт", "чайник", "бабочка", "рюкзак", "радуга", "ёж", "паровоз", "черепаха", "пицца", "медведь", "снеговик", "подводная лодка", "велосипед", "акула", "парусник", "арбуз", "сова", "компас", "паутина", "корона", "робот", "замок", "ракета", "крокодил", "мороженое", "гитара", "улитка", "пират", "облако", "подсолнух", "дракон", "зонт", "скрипка", "сапог", "пингвин", "костёр", "маяк", "пчела", "дуб", "ведро", "петух", "лестница", "сани", "дельфин", "сюрприз"];
 function normalizeWord(value: unknown): string { return String(value ?? "").toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, ""); }
 function letterIndices(word: string): number[] { return [...word].map((char, index) => char === " " ? -1 : index).filter(index => index >= 0); }
 function maxHints(word: string): number { const count = letterIndices(word).length; return Math.max(0, Math.min(count - 1, Math.floor(count / 2))); }
@@ -24,10 +24,14 @@ function makeHint(word: string, revealed: number[]): string {
   const shown = new Set(revealed);
   return [...word].map((char, index) => char === " " ? "   " : shown.has(index) ? char + " " : "_ ").join("");
 }
-function chooseWordPair(): string[] {
-  const first = crypto.getRandomValues(new Uint32Array(1))[0] % DRAW_WORDS.length;
-  const offset = 1 + crypto.getRandomValues(new Uint32Array(1))[0] % (DRAW_WORDS.length - 1);
-  return [DRAW_WORDS[first], DRAW_WORDS[(first + offset) % DRAW_WORDS.length]];
+function chooseWordPair(drawing: Drawing): string[] {
+  const offered = drawing.offeredWords ??= [drawing.word, ...drawing.choices].filter(Boolean);
+  const available = DRAW_WORDS.filter(word => !offered.includes(word));
+  const first = crypto.getRandomValues(new Uint32Array(1))[0] % available.length;
+  const offset = 1 + crypto.getRandomValues(new Uint32Array(1))[0] % (available.length - 1);
+  const choices = [available[first], available[(first + offset) % available.length]];
+  offered.push(...choices);
+  return choices;
 }
 
 function neighbours(i: number, config: GameConfig): number[] {
@@ -234,7 +238,7 @@ export class GameRoom extends DurableObject<Env> {
     const drawerId = drawing.turnOrder[nextRound - 1];
     const drawer = this.game.players.find(player => player.id === drawerId)!;
     drawing.round = nextRound; drawing.drawerId = drawerId; drawing.word = "";
-    drawing.stage = "choosing"; drawing.choices = chooseWordPair(); drawing.revealedIndices = [];
+    drawing.stage = "choosing"; drawing.choices = chooseWordPair(drawing); drawing.revealedIndices = [];
     drawing.startedAt = 0; drawing.endsAt = Date.now() + 15_000; drawing.strokes = []; drawing.guessedPlayers = [];
     this.game.event = { kind: "drawRound", name: drawer.name, id: drawerId };
     this.addDrawChat("system", "Комната", `Раунд ${drawing.round}/${drawing.roundsTotal}: ${drawer.name} выбирает слово.`);
