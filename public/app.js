@@ -551,23 +551,49 @@ import { DRAW_WORDS } from "./draw-words.js";
   });
   function extendStroke(event, final = false) {
     if (!activeStroke || event.pointerId !== activePointerId) return;
-    const point = canvasPoint(event), previous = activeStroke.points.at(-1);
-    if (activeStroke.tool === "line") activeStroke.points = [activeStroke.points[0], point];
+    if (activeStroke.tool === "line") activeStroke.points = [activeStroke.points[0], canvasPoint(event)];
     else {
-      if (!final && Math.hypot(point.x - previous.x, point.y - previous.y) < 0.002) return;
-      if (activeStroke.points.length >= 100) activeStroke.points = activeStroke.points.filter((_, index) => index % 2 === 0);
-      activeStroke.points.push(point);
+      const samples = final ? [event] : event.getCoalescedEvents?.();
+      for (const sample of samples?.length ? samples : [event]) {
+        const next = canvasPoint(sample), last = activeStroke.points.at(-1);
+        if (next.x !== last.x || next.y !== last.y) activeStroke.points.push(next);
+      }
     }
     renderDrawingCanvas(activeStroke);
   }
   ui.drawCanvas.addEventListener("pointermove", event => extendStroke(event));
+  // Keep the bends that deviate most from the straight segments already retained.
+  function pointsForNetwork(points, limit = 100) {
+    if (points.length <= limit) return points;
+    function segment(first, last) {
+      const a = points[first], b = points[last];
+      const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+      let error = 0, split = first;
+      for (let i = first + 1; i < last; i++) {
+        const x = points[i].x - a.x, y = points[i].y - a.y;
+        const t = length ? Math.max(0, Math.min(1, (x * dx + y * dy) / length)) : 0;
+        const distance = (x - t * dx) ** 2 + (y - t * dy) ** 2;
+        if (distance > error) { error = distance; split = i; }
+      }
+      return { first, last, error, split };
+    }
+    const kept = [0, points.length - 1], pending = [segment(0, points.length - 1)];
+    while (kept.length < limit) {
+      pending.sort((a, b) => a.error - b.error);
+      const next = pending.pop();
+      if (!next?.error) break;
+      kept.push(next.split);
+      pending.push(segment(next.first, next.split), segment(next.split, next.last));
+    }
+    return kept.sort((a, b) => a - b).map(index => points[index]);
+  }
   function finishStroke(event) {
     if (!activeStroke || event.pointerId !== activePointerId) return;
     if (!canPaint() || activeStrokeRound !== game.drawing.round) { activeStroke = null; renderDrawingCanvas(); return; }
     extendStroke(event, true);
     if (activeStroke.points.length === 1) activeStroke.points.push({ ...activeStroke.points[0] });
     if (solo) { game.drawing.strokes.push(activeStroke); renderDrawingCanvas(); }
-    else sendDrawingAction("stroke", { stroke: activeStroke });
+    else sendDrawingAction("stroke", { stroke: { ...activeStroke, points: pointsForNetwork(activeStroke.points) } });
     activeStroke = null; activePointerId = null;
   }
   ui.drawCanvas.addEventListener("pointerup", finishStroke);
