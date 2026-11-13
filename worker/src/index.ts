@@ -48,7 +48,7 @@ function safeConfig(value: unknown): GameConfig {
 }
 function automaticFlagLimit(mines: number, players: number): number {
   const count = Math.max(1, players), spareFactor = Math.min(2, 1 + 0.25 * (count - 1));
-  return Math.max(1, Math.floor(mines * spareFactor / count));
+  return Math.max(1, Math.ceil(mines * spareFactor / count));
 }
 function freshGame(): Game { return { config: null, cells: [], players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null }; }
 function stripSecrets(game: Game, me: Player) {

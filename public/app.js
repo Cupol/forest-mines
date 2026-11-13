@@ -67,7 +67,7 @@
   }
   function automaticFlagLimit(mines, players) {
     const count = Math.max(1, players), spareFactor = Math.min(2, 1 + 0.25 * (count - 1));
-    return Math.max(1, Math.floor(mines * spareFactor / count));
+    return Math.max(1, Math.ceil(mines * spareFactor / count));
   }
   function refreshAutomaticFlagLimit() {
     const mineCount = Number($("mine-total").value) || PRESETS.medium.mines;
