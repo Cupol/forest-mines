@@ -22,8 +22,8 @@
       <div class="intro">
         <span class="eyebrow">ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.</span>
         <h1>Лесной<br><em>сапёр</em></h1>
-        <p>Соседи открывают клетки одновременно. Найди скрытую мину и отметь её первым — получи очки. Подорвёшься — потеряешь.</p>
-        <div class="rules-strip"><span><b>+2</b> верно отмеченная мина</span><span><b>−3</b> подрыв</span><span><b>+1</b> флажок за 8 безопасных клеток</span></div>
+        <p>Каждый ставит свои цветные флажки на подозрительные клетки. Мины не раскрываются до конца партии: тогда и станет ясно, чьи догадки точнее.</p>
+        <div class="rules-strip"><span><b>17</b> флажков на карте</span><span><b>+2</b> за мину в конце</span><span><b>🎨</b> свой цвет</span></div>
       </div>
       <section class="lobby card">
         <div class="card-heading"><span class="eyebrow">СТАРАЯ ЛЕСНАЯ СТОЛОВАЯ</span><span class="seal">01 / 03</span></div>
@@ -40,19 +40,19 @@
 
     <section class="game hidden" id="game">
       <header class="game-head card">
-        <div class="game-title"><div class="eyebrow">СТОЛОВАЯ · ПАРТИЯ <span id="room-label">#----</span></div><h2>Счёт за опасные открытия</h2></div>
+        <div class="game-title"><div class="eyebrow">СТОЛОВАЯ · ПАРТИЯ <span id="room-label">#----</span></div><h2>Чьи флажки точнее?</h2></div>
         <div class="head-actions"><button id="copy-link" class="button button-quiet">Пригласить ↗</button><button id="leave-room" class="icon-button" aria-label="Вернуться в меню">×</button></div>
       </header>
       <div class="dashboard">
-        <aside class="players-panel card"><div class="panel-title"><span>ЗА СТОЛОМ</span><span id="player-count">1 / 20</span></div><ol id="players-list" class="players-list"></ol><div class="your-resources"><span>МОИ ФЛАЖКИ</span><strong><span id="flags-left">17</span><small> / <b id="flag-cap">17</b></small></strong><p>За каждые 8 безопасных клеток, открытых первым, получаешь флажок. До 8 дополнительных за матч.</p></div><div class="legend"><span><i class="legend-mine"></i> найденная мина</span><span><i class="legend-flag">⚑</i> твоя догадка</span></div></aside>
+        <aside class="players-panel card"><div class="panel-title"><span>ЗА СТОЛОМ</span><span id="player-count">1 / 20</span></div><ol id="players-list" class="players-list"></ol><div class="your-resources"><span>СВОБОДНО ФЛАЖКОВ</span><strong><span id="flags-left">17</span><small> / <b id="flag-cap">17</b></small></strong><p>Можно поставить до 17 личных флажков. Снял свой — место освободилось. Мины откроются в конце.</p></div><div class="legend"><span><i class="legend-mine"></i> мина (в конце)</span><span><i class="legend-flag">⚑</i> цветная метка игрока</span></div></aside>
         <section class="board-panel card">
           <div class="board-toolbar"><div><span class="eyebrow">ОБЩЕЕ ПОЛЕ</span><div class="board-subtitle"><span id="safe-count">223</span> безопасных клеток · <span id="mine-count">33</span> мин</div></div><div class="board-controls"><span class="action-hint">ЛКМ — проверить&nbsp; · &nbsp;ПКМ — флажок</span><button id="flag-mode" class="button button-quiet flag-mode" aria-pressed="false">⚑ Флажок</button></div></div>
           <div class="board-wrap"><div class="board" id="board" role="grid" aria-label="Поле сапёра"></div></div>
           <div class="status-line" id="game-status" role="status"><span class="status-dot"></span><span>Комната готова. Присоединяйся — и начинайте!</span></div>
         </section>
-        <aside class="score-panel card"><div class="panel-title"><span>ПРОГРЕСС</span><span class="moon">◔</span></div><div class="progress-number"><strong id="found-count">0</strong><span> / 33</span></div><p class="progress-caption">МИН ОТМЕЧЕНО</p><div class="progress-track"><i id="progress-bar"></i></div><div class="round-divider"></div><div class="my-score"><span>ТВОИ ОЧКИ</span><strong id="my-score">0</strong></div><p class="scoring-note"><b>+2</b> за верно найденную мину<br><b>−3</b> за подрыв</p><div class="room-share"><span>КОД ДРУЗЬЯМ</span><strong id="share-code">----</strong></div></aside>
+        <aside class="score-panel card"><div class="panel-title"><span>ПРОГРЕСС</span><span class="moon">◔</span></div><div class="progress-number"><strong id="found-count">0</strong><span> / 223</span></div><p class="progress-caption">БЕЗОПАСНЫХ КЛЕТОК ОТКРЫТО</p><div class="progress-track"><i id="progress-bar"></i></div><div class="round-divider"></div><div class="my-score"><span id="score-label">РЕЗУЛЬТАТ В КОНЦЕ</span><strong id="my-score">—</strong></div><p class="scoring-note"><b>+2</b> за каждый твой флажок на мине<br>Пустой флажок очков не даёт</p><div class="room-share"><span>КОД ДРУЗЬЯМ</span><strong id="share-code">----</strong></div></aside>
       </div>
-      <footer class="game-footer"><span>ПЕРВЫЙ УСПЕЛ — ПОЛУЧИЛ ОЧКО</span><span>ОДНА КОМНАТА · ОДНО ОБЩЕЕ ПОЛЕ</span></footer>
+      <footer class="game-footer"><span>МИНЫ ОТКРОЮТСЯ, КОГДА ОТКРОЮТ ВСЕ БЕЗОПАСНЫЕ КЛЕТКИ</span><span>У КАЖДОГО СВОЙ ЦВЕТ И 17 ФЛАЖКОВ</span></footer>
     </section>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </main>

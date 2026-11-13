@@ -1,6 +1,7 @@
 (() => {
   "use strict";
-  const W = 16, H = 16, MINES = 33, FLAG_LIMIT = 17, MAX_PLAYERS = 20;
+  const W = 16, H = 16, MINES = 33, SAFE_COUNT = 223, FLAG_LIMIT = 17, MAX_PLAYERS = 20;
+  const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#f39a5e", "#65d2bb", "#df8add", "#a9bdff", "#d2dc72", "#ff8580", "#80d8e8", "#ffc978", "#90b8f0", "#c2dc85", "#eea7c7", "#70d5a0", "#e8a567", "#9e9cf2", "#c7d0da"];
   const $ = id => document.getElementById(id);
   const ui = {
     landing: $("landing"), game: $("game"), name: $("player-name"), roomInput: $("room-code"), error: $("lobby-error"), board: $("board"), playerList: $("players-list"), status: $("game-status"),
@@ -38,7 +39,7 @@
   }
   function startView(id, mode) {
     roomId = id; solo = mode === "solo"; myId = "local-player";
-    game = { cells: makeBoard(), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, flagsUsed: 0, bonusFlags: 0, safeOpened: 0, explosions: 0, online: true }], myFlags: [], found: 0, safe: 0, over: false };
+    game = { cells: makeBoard(), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, over: false };
     showGame(mode); draw(); setStatus(solo ? "Лесной дух вышел на тропу. Найди его следы." : "Комната создана. Позови остальных за стол.");
   }
   function showGame(mode) {
@@ -71,7 +72,7 @@
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
       if (message.type === "notice") { setStatus(message.text || "Действие недоступно.", "hit"); return; }
       if (message.type === "state") {
-        game = { cells: message.cells, players: message.players, myFlags: message.myFlags || [], flagsUsed: message.flagsUsed || 0, bonusFlags: message.bonusFlags || 0, found: message.found, safe: message.safe, over: message.over };
+        game = { cells: message.cells, players: message.players, safe: message.safe, over: message.over };
         myId = message.me; roomId = message.room; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
       }
@@ -91,54 +92,53 @@
     if (!solo) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, index })); return; }
     localAction(myId, type, index);
   }
-  function personalFlags(id) { return solo ? game.myFlags : (id === myId ? game.myFlags : []); }
+  function personalFlags(id) { return game.players.find(p => p.id === id)?.flags || []; }
   function localAction(id, type, index) {
     const cell = game.cells[index], player = game.players.find(p => p.id === id);
-    if (!player || !cell || cell.open) return;
+    if (!player || !cell) return;
     const flags = personalFlags(id);
     if (type === "flag") {
       const existing = flags.indexOf(index);
-      if (existing >= 0) { flags.splice(existing, 1); draw(); if (!solo) socket.send(JSON.stringify({ type, index })); return; }
-      const used = solo ? player.flagsUsed : game.flagsUsed;
-      const cap = FLAG_LIMIT + (solo ? player.bonusFlags : game.bonusFlags);
-      if (used >= cap) { if (id === myId) setStatus("Флажки закончились. Открывай безопасные клетки, чтобы заработать новые.", "hit"); return; }
-      if (solo) player.flagsUsed++; else game.flagsUsed++;
-      flags.push(index);
-      if (cell.mine) {
-        cell.open = true; cell.by = player.name; player.score += 2; game.found++;
-        game.players.forEach(p => { const list = personalFlags(p.id); const at = list.indexOf(index); if (at >= 0) list.splice(at, 1); });
-        if (id === myId) setStatus("Нашёл мину первым. +2 очка — осторожно дальше.", "found");
-      } else if (id === myId) setStatus("Флажок поставлен. Попытка потрачена — проверь соседние числа.");
-      finishIfDone(); draw();
+      if (existing >= 0) flags.splice(existing, 1);
+      else {
+        if (cell.open) return;
+        if (flags.length >= FLAG_LIMIT) { if (id === myId) setStatus("У тебя уже стоят все 17 флажков. Сними один, чтобы переставить.", "hit"); return; }
+        flags.push(index);
+      }
+      if (id === myId) setStatus(existing >= 0 ? "Флажок снят — место снова свободно." : "Твоя цветная метка поставлена. Мины проверят в конце.");
+      draw();
       if (solo) scheduleBot(1200 + Math.random() * 1000);
       return;
     }
-    if (flags.includes(index)) { if (id === myId) setStatus("Сначала сними свой флажок. Повторное нажатие на флажок отменяет попытку.", "hit"); return; }
+    if (cell.open || cell.mine) return;
     openCells(floodCandidates(index), id);
     if (solo) scheduleBot(1400 + Math.random() * 1900);
   }
   function openCells(indices, playerId) {
     const player = game.players.find(p => p.id === playerId); if (!player) return;
     for (const i of indices) {
-      const cell = game.cells[i]; if (!cell || cell.open) continue;
+      const cell = game.cells[i]; if (!cell || cell.open || cell.mine) continue;
       cell.open = true; cell.by = player.name;
-      if (cell.mine) { cell.boom = true; player.score -= 3; player.explosions++; if (playerId === myId) setStatus("Подрыв! −3 очка. Остальные мины ещё скрыты.", "hit"); }
-      else {
-        game.safe++;
-        player.safeOpened++;
-        const earned = Math.min(8, Math.floor(player.safeOpened / 8));
-        if (earned > player.bonusFlags) { player.bonusFlags = earned; if (playerId === myId) setStatus("За 8 безопасных клеток ты получил дополнительный флажок!", "found"); }
-      }
+      game.safe++;
+      if (playerId === "forest-spirit") player.flags = player.flags.filter(flag => flag !== i);
     }
     finishIfDone(); draw();
   }
-  function finishIfDone() { if (game && game.found >= MINES) { game.over = true; setStatus("Все мины найдены. Победил тот, кто обошёлся без подрывов!", "found"); } }
+  function finishIfDone() {
+    if (!game || game.over || game.safe < SAFE_COUNT) return;
+    game.over = true;
+    for (const player of game.players) player.score = player.flags.reduce((sum, index) => sum + (game.cells[index].mine ? 2 : 0), 0);
+    const top = Math.max(...game.players.map(player => player.score));
+    const winners = game.players.filter(player => player.score === top).map(player => player.name);
+    setStatus(`Итог: ${winners.join(", ")} — ${top} очков за точные флажки.`, "found");
+  }
   function summarize(event) {
     if (!event) return;
-    if (event.kind === "found") setStatus(`${event.name} нашёл мину и получил +2.`, "found");
-    else if (event.kind === "boom") setStatus(`${event.name} подорвался: −3 очка.`, "hit");
-    else if (event.kind === "falseflag" && event.id === myId) setStatus("Тут пусто. Попытка с флажком потрачена.", "hit");
-    else if (event.kind === "safe") setStatus(event.earned && event.id === myId ? "За безопасные клетки ты получил дополнительный флажок!" : `${event.name} проверил клетку. Цифры подскажут, где мина.`, event.earned && event.id === myId ? "found" : "");
+    if (event.kind === "finished") {
+      const top = Math.max(...game.players.map(player => player.score));
+      const winners = game.players.filter(player => player.score === top).map(player => player.name);
+      setStatus(`Итог: ${winners.join(", ")} — ${top} очков за точные флажки.`, "found");
+    }
     else if (event.kind === "joined") notify(`${event.name} сел за стол`);
   }
   function draw() {
@@ -147,30 +147,36 @@
     const fragment = document.createDocumentFragment();
     for (let i = 0; i < game.cells.length; i++) {
       const c = game.cells[i], button = document.createElement("button"); button.type = "button"; button.className = "cell"; button.setAttribute("role", "gridcell"); button.dataset.index = i;
-      const mineFlag = c.open && c.mine;
-      if (c.open) {
+      if (c.open || game.over) {
         button.classList.add("revealed");
-        if (mineFlag) { button.classList.add("mine"); if (c.boom && c.by === currentPlayer()?.name) button.classList.add("exploded"); button.textContent = "✹"; button.setAttribute("aria-label", `Найденная мина, ${c.by || "подрыв"}`); }
+        if (c.mine) { button.classList.add("mine"); button.textContent = "✹"; button.setAttribute("aria-label", "Мина"); }
         else if (c.near) { button.textContent = String(c.near); button.classList.add(`num-${c.near}`); button.setAttribute("aria-label", `Рядом мин: ${c.near}`); }
         else button.setAttribute("aria-label", "Безопасно");
-      } else if (personalFlags(myId).includes(i)) { button.classList.add("personal-flag"); button.textContent = ""; button.setAttribute("aria-label", "Твой флажок; нажми правой кнопкой или ещё раз на телефоне, чтобы снять"); }
-      else button.setAttribute("aria-label", "Неизвестная клетка");
-      if (c.open || game.over) button.disabled = true;
+      }
+      const owners = game.players.filter(player => player.flags.includes(i));
+      if (owners.length) {
+        button.classList.add("player-flag"); if (c.open || game.over) button.classList.add("flagged-revealed");
+        const stack = document.createElement("span"); stack.className = "flag-stack";
+        for (const owner of owners.slice(0, 3)) { const mark = document.createElement("i"); mark.className = "flag-mark"; mark.style.setProperty("--flag-color", owner.color || PLAYER_COLORS[0]); mark.textContent = "⚑"; stack.append(mark); }
+        if (owners.length > 3) { const extra = document.createElement("small"); extra.textContent = `+${owners.length - 3}`; stack.append(extra); }
+        button.append(stack); button.setAttribute("aria-label", `Флажки: ${owners.map(owner => owner.name).join(", ")}`);
+      } else if (!c.open) button.setAttribute("aria-label", "Неизвестная клетка");
+      if ((c.open && !personalFlags(myId).includes(i)) || game.over) button.disabled = true;
       button.addEventListener("click", () => { if (flagMode) sendAction("flag", i); else sendAction("open", i); });
       button.addEventListener("contextmenu", event => { event.preventDefault(); sendAction("flag", i); });
       fragment.appendChild(button);
     }
     ui.board.appendChild(fragment);
-    const found = game.found || game.cells.filter(c => c.open && c.mine).length;
-    ui.found.textContent = found; ui.safe.textContent = Math.max(0, W * H - MINES - game.safe); ui.mineCount.textContent = MINES - found; ui.progress.style.width = `${100 * found / MINES}%`;
-    const me = currentPlayer(); ui.score.textContent = me ? me.score : 0;
-    const used = solo ? (me?.flagsUsed || 0) : (game.flagsUsed || 0), cap = FLAG_LIMIT + (solo ? (me?.bonusFlags || 0) : (game.bonusFlags || 0)); ui.flagsLeft.textContent = Math.max(0, cap - used); ui.flagCap.textContent = cap;
+    ui.found.textContent = game.safe; ui.safe.textContent = Math.max(0, SAFE_COUNT - game.safe); ui.mineCount.textContent = MINES; ui.progress.style.width = `${100 * game.safe / SAFE_COUNT}%`;
+    const me = currentPlayer(); ui.score.textContent = game.over && me ? me.score : "—";
+    const label = document.getElementById("score-label"); if (label) label.textContent = game.over ? "ТВОЙ ИТОГ" : "РЕЗУЛЬТАТ В КОНЦЕ";
+    ui.flagsLeft.textContent = Math.max(0, FLAG_LIMIT - (me?.flags.length || 0)); ui.flagCap.textContent = FLAG_LIMIT;
     ui.playerCount.textContent = `${game.players.filter(p => p.online !== false).length} / ${MAX_PLAYERS}`;
     ui.playerList.replaceChildren();
     for (const [rank, player] of game.players.toSorted((a, b) => b.score - a.score).entries()) {
       const row = document.createElement("li"), points = document.createElement("span"), avatar = document.createElement("span"), details = document.createElement("span"), name = document.createElement("span"), resources = document.createElement("span");
-      const cap = FLAG_LIMIT + (player.bonusFlags || 0), left = Math.max(0, cap - (player.flagsUsed || 0));
-      row.className = "player-row" + (player.id === myId ? " player-me" : ""); avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.online === false ? " · вышел" : ""); resources.className = "player-sub"; resources.textContent = `⚑ ${left}`; points.className = "player-points"; points.textContent = String(player.score);
+      const left = Math.max(0, FLAG_LIMIT - (player.flags?.length || 0));
+      row.className = "player-row" + (player.id === myId ? " player-me" : ""); avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); avatar.style.color = player.color || PLAYER_COLORS[0]; details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.online === false ? " · вышел" : ""); resources.className = "player-sub"; resources.textContent = `⚑ ${left} свободно`; points.className = "player-points"; points.textContent = game.over ? String(player.score) : "—";
       details.append(name, resources); row.append(avatar, details, points); ui.playerList.append(row);
     }
     ui.board.classList.toggle("game-over", Boolean(game.over));
@@ -187,8 +193,8 @@
     for (const clue of open) {
       const around = neighbors(clue.i).filter(i => !game.cells[i].open && !bot.flags.includes(i));
       const needed = clue.c.near - neighbors(clue.i).filter(i => bot.flags.includes(i)).length;
-      if (needed > 0 && needed === around.length) { foundTarget = around.find(i => game.cells[i].mine) ?? around[0]; break; }
-      if (needed === 0 && around.length) { safeTarget = around.find(i => !game.cells[i].mine) ?? around[0]; break; }
+      if (needed > 0 && needed === around.length) { foundTarget = around[0]; break; }
+      if (needed === 0 && around.length) { safeTarget = around[0]; break; }
     }
     if (foundTarget == null && safeTarget == null) {
       // With no forced deduction the spirit takes a true guess; it does not
@@ -199,10 +205,8 @@
       const safeArea = floodCandidates(picked.i);
       openCells(safeArea, bot.id);
     } else if (foundTarget != null) {
-      bot.flagsUsed++;
-      if (game.cells[foundTarget].mine) { game.cells[foundTarget].open = true; game.cells[foundTarget].by = bot.name; bot.score += 2; game.found++; bot.flags.push(foundTarget); setStatus("Лесной дух нашёл мину первым. У тебя остались его следы.", "found"); }
-      else { game.cells[foundTarget].open = true; game.cells[foundTarget].by = bot.name; bot.score -= 3; bot.explosions++; bot.flags.push(foundTarget); }
-      finishIfDone(); draw();
+      if (bot.flags.length >= FLAG_LIMIT) bot.flags.shift();
+      bot.flags.push(foundTarget); draw();
     } else openCells(floodCandidates(safeTarget), bot.id);
     scheduleBot(1250 + Math.random() * 1900);
   }
@@ -215,7 +219,7 @@
   function makeRoomCode() { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""); }
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo"); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, flagsUsed: 0, bonusFlags: 0, safeOpened: 0, explosions: 0, flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo"); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   $("leave-room").addEventListener("click", () => teardown());
   $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });
