@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101817">
   <meta name="description" content="Лесной сапёр — дружеская игра на поиск мин и общий счёт">
   <title>Лесной сапёр</title>
-  <link rel="stylesheet" href="style.css?v=large-field-120-mines">
+  <link rel="stylesheet" href="style.css?v=custom-player-flags-1">
   <script src="config.js"></script>
-  <script src="app.js?v=large-field-120-mines" defer></script>
+  <script src="app.js?v=custom-player-flags-1" defer></script>
 </head>
 <body>
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -47,7 +47,7 @@
         <div class="room-setup-card card">
           <div id="host-settings">
             <div class="card-heading"><span class="eyebrow">СОЗДАЙ ИГРОВОЕ ПОЛЕ</span><span class="seal">НАСТРОЙКИ ХОСТА</span></div>
-            <p class="setup-description">Друзья уже могут входить в комнату. Выбери размер и нажми кнопку — поле создастся, партия начнётся, вход закроется.</p>
+            <p class="setup-description">Друзья уже могут входить в комнату. Лимит флажков рассчитается по числу игроков, но его можно изменить вручную. Выбери размер и нажми кнопку — поле создастся, партия начнётся, вход закроется.</p>
             <div class="settings-heading"><span>РАЗМЕР ПАРТИИ</span><span>ГОТОВЫЕ НАБОРЫ</span></div>
             <div class="preset-grid" role="group" aria-label="Готовый размер партии">
               <button class="preset-button" type="button" data-preset="small"><b>Малая</b><span>2–4 игрока</span><small>12 × 12 · 18 мин · флажки по числу игроков</small></button>
@@ -58,7 +58,7 @@
               <label>Ширина<input id="board-width" type="number" min="8" max="30" value="16"></label>
               <label>Высота<input id="board-height" type="number" min="8" max="30" value="16"></label>
               <label>Мины<input id="mine-total" type="number" min="1" max="899" value="33"></label>
-              <label>Флажки каждому · авто<input id="flag-total" type="number" min="1" max="900" value="20" disabled></label>
+              <label>Флажки каждому<input id="flag-total" type="number" min="1" max="900" value="20"></label>
             </div>
             <button id="create-board" class="button button-primary create-board">Создать поле и начать партию <span>↗</span></button>
             <p class="lobby-error" id="setup-error" role="alert"></p>

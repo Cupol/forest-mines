@@ -17,7 +17,7 @@
   const savedRoom = new URLSearchParams(location.search).get("room");
   if (savedRoom) ui.roomInput.value = savedRoom.toUpperCase().slice(0, 6);
 
-  let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, roomId = "", myId = "", myToken = "", toastTimer = 0, winnerDismissed = false;
+  let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, flagLimitCustom = false, roomId = "", myId = "", myToken = "", toastTimer = 0, winnerDismissed = false;
   function showError(message) { ui.error.textContent = message; }
   function notify(message) { ui.toast.textContent = message; ui.toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 2600); }
   function setStatus(message, mood = "") { ui.status.lastElementChild.textContent = message; ui.status.classList.toggle("hit", mood === "hit"); ui.status.classList.toggle("found", mood === "found"); }
@@ -69,7 +69,8 @@
     const count = Math.max(1, players), spareFactor = Math.min(2, 1 + 0.25 * (count - 1));
     return Math.max(1, Math.ceil(mines * spareFactor / count));
   }
-  function refreshAutomaticFlagLimit() {
+  function refreshAutomaticFlagLimit(force = false) {
+    if (flagLimitCustom && !force) return;
     const mineCount = Number($("mine-total").value) || PRESETS.medium.mines;
     const players = game?.players.filter(player => player.online !== false).length || 1;
     $("flag-total").value = automaticFlagLimit(mineCount, players);
@@ -85,6 +86,7 @@
   }
   function enterRoom(code, makeNew) {
     const name = cleanName(); if (!name) return;
+    if (makeNew) flagLimitCustom = false;
     const api = apiAddress();
     if (!api) { showError("Сервер комнаты ещё не подключён. Пока можно сыграть одному против лесного духа."); return; }
     roomId = code;
@@ -304,10 +306,11 @@
   $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
     const config = PRESETS[button.dataset.preset];
-    $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; refreshAutomaticFlagLimit();
+    flagLimitCustom = false; $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; refreshAutomaticFlagLimit(true);
     document.querySelectorAll("[data-preset]").forEach(item => item.classList.toggle("selected", item === button)); showError(""); $("setup-error").textContent = "";
   });
   for (const id of ["board-width", "board-height", "mine-total"]) $(id).addEventListener("input", () => { document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; refreshAutomaticFlagLimit(); });
+  $("flag-total").addEventListener("input", () => { flagLimitCustom = true; document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; });
   ui.createBoard.addEventListener("click", () => { const config = chosenSettings(true); if (socket && config && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start", config })); });
   $("winner-close").addEventListener("click", () => { winnerDismissed = true; ui.winnerOverlay.classList.add("hidden"); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
