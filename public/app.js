@@ -4,7 +4,7 @@
   const PRESETS = {
     small: { width: 12, height: 12, mines: 18, flags: 9 },
     medium: { width: 16, height: 16, mines: 33, flags: 17 },
-    large: { width: 24, height: 24, mines: 75, flags: 30 }
+    large: { width: 24, height: 24, mines: 120, flags: 22 }
   };
   const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#f39a5e", "#65d2bb", "#df8add", "#a9bdff", "#d2dc72", "#ff8580", "#80d8e8", "#ffc978", "#90b8f0", "#c2dc85", "#eea7c7", "#70d5a0", "#e8a567", "#9e9cf2", "#c7d0da"];
   const $ = id => document.getElementById(id);
