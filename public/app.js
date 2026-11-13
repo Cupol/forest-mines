@@ -33,7 +33,7 @@
     $("hero-description").textContent = drawing ? "Рисуй загаданное слово, пока друзья угадывают. Очки получают самые быстрые догадчики." : "Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.";
     $("hero-rules").innerHTML = drawing ? "<span><b>✎</b> рисуй по очереди</span><span><b>⌛</b> угадай за минуту</span><span><b>★</b> очки за скорость</span>" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
     $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
-    $("solo-start").textContent = drawing ? "Порисовать одному (практика) →" : "Сыграть с ботом →";
+    $("solo-start").textContent = drawing ? "Попробовать одному →" : "Сыграть с ботом →";
   }
   let switchingGame = false;
   async function changeGame() {
@@ -270,12 +270,13 @@
     ui.drawWord.innerHTML = game.phase === "over" ? `Слово: <strong>${escapeMarkup(drawing.word || "—")}</strong>` : choosing ? (isDrawer ? "Выбери слово для рисунка" : "Художник выбирает слово…") : isDrawer ? `ТВОЁ СЛОВО: <strong>${escapeMarkup(drawing.word)}</strong>` : drawing.guessedPlayers.includes(myId) ? "Верно! Ждём остальных" : `Что это? <strong>${escapeMarkup(drawing.hint || "_ _ _")}</strong>`;
     ui.drawTurn.textContent = game.phase === "over" ? "ИГРА ОКОНЧЕНА" : drawing.drawerId === myId ? "ТЫ РИСУЕШЬ" : `${drawer?.name ?? "Игрок"} РИСУЕТ`;
     ui.drawTools.classList.toggle("hidden", !isDrawer || choosing || game.phase !== "playing");
-    $("draw-hint").classList.toggle("hidden", solo);
-    $("draw-hint-count").classList.toggle("hidden", solo);
+    $("draw-practice-actions").classList.toggle("hidden", !solo);
     $("draw-hint").disabled = choosing || !isDrawer || game.phase !== "playing" || (drawing.hintCount || 0) >= (drawing.maxHints || 0);
-    $("draw-hint-count").textContent = `Открыто букв: ${drawing.hintCount || 0} / ${drawing.maxHints || 0}`;
+    $("draw-hint-count").textContent = solo && drawing.hintCount ? `Подсказка: ${drawing.hint}` : `Открыто букв: ${drawing.hintCount || 0} / ${drawing.maxHints || 0}`;
     const canGuess = game.phase === "playing" && !choosing && !isDrawer && !drawing.guessedPlayers.includes(myId);
-    ui.drawGuess.disabled = !canGuess; ui.drawGuess.placeholder = canGuess ? "Напиши свою догадку…" : drawing.drawerId === myId ? "Ты рисуешь — остальные угадывают" : "Ты угадал!";
+    ui.drawGuessForm.classList.toggle("hidden", solo && practiceRole === "draw");
+    ui.drawGuess.disabled = !canGuess;
+    ui.drawGuess.placeholder = canGuess ? "Напиши свою догадку…" : game.phase === "over" ? "Раунд завершён" : choosing ? "Художник выбирает слово" : isDrawer ? "Ты рисуешь — остальные угадывают" : "Ты угадал!";
     ui.drawGuessForm.querySelector("button").disabled = !canGuess;
     ui.drawPlayerCount.textContent = `${playersOnline.length}`;
     ui.drawScores.replaceChildren();
@@ -288,7 +289,7 @@
     ui.drawChat.scrollTop = ui.drawChat.scrollHeight;
     renderDrawingCanvas(activeStroke); updateDrawClock();
     if (game.phase === "playing" && drawing.endsAt) drawClockTimer = setInterval(updateDrawClock, 500);
-    $("phase-hint").textContent = game.phase === "over" ? "ВСЕ РАУНДЫ ЗАВЕРШЕНЫ · ИТОГИ СПРАВА" : "РИСУЙ ИЛИ УГАДЫВАЙ · КАЖДЫЙ ИГРОК РИСУЕТ ОДИН РАЗ";
+    $("phase-hint").textContent = solo ? "ПРОБНЫЙ РАУНД · МОЖНО НАЧАТЬ ЗАНОВО" : game.phase === "over" ? "ВСЕ РАУНДЫ ЗАВЕРШЕНЫ · ИТОГИ СПРАВА" : "РИСУЙ ИЛИ УГАДЫВАЙ · КАЖДЫЙ ИГРОК РИСУЕТ ОДИН РАЗ";
   }
   function escapeMarkup(value) { return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char])); }
   function renderDrawingCanvas(extra = null) {
@@ -315,6 +316,11 @@
     const drawing = game?.drawing;
     if (!drawing || !drawing.endsAt) { ui.drawClock.textContent = solo ? "ПРАКТИКА" : "—"; return; }
     const seconds = Math.max(0, Math.ceil((drawing.endsAt - Date.now()) / 1000));
+    if (solo && seconds === 0 && game.phase === "playing") {
+      if (drawing.stage === "choosing") selectPracticeWord(drawing.choices[Math.floor(Math.random() * 2)]);
+      else finishPractice("Время вышло.");
+      return;
+    }
     ui.drawClock.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     ui.drawClock.classList.toggle("time-low", seconds <= 10);
   }
@@ -424,12 +430,49 @@
     return [...found];
   }
   function makeRoomCode() { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""); }
-  function startDrawingPractice() {
-    if (!cleanName()) return;
+  const practiceSketches = [
+    { word: "дом", paths: [[[.29,.49],[.5,.19],[.71,.49],[.29,.49]],[[.33,.49],[.33,.82],[.67,.82],[.67,.49]],[[.46,.82],[.46,.63],[.55,.63],[.55,.82]]] },
+    { word: "гриб", paths: [[[.24,.54],[.28,.39],[.37,.26],[.5,.22],[.63,.26],[.72,.39],[.76,.54],[.24,.54]],[[.44,.54],[.42,.79],[.58,.79],[.56,.54]]] },
+    { word: "зонт", paths: [[[.22,.52],[.26,.4],[.37,.27],[.5,.23],[.63,.27],[.74,.4],[.78,.52],[.22,.52]],[[.5,.19],[.5,.77],[.47,.83],[.42,.83],[.39,.78]]] }
+  ];
+  let practiceRole = "draw", practiceSketchIndex = -1;
+  function startDrawingPractice(role = "draw") {
     solo = true; myId = "local-practice"; roomId = "ПРАКТИКА";
-    game = { mode: "draw", phase: "playing", over: false, hostId: myId, players: [{ id: myId, name: ui.name.value.trim(), score: 0, color: PLAYER_COLORS[0], online: true }], drawing: { round: 1, roundsTotal: 1, drawerId: myId, word: "Свободное рисование", hint: "", startedAt: Date.now(), endsAt: 0, strokes: [], guessedPlayers: [] }, chat: [] };
+    practiceRole = role; activeStroke = null; ui.drawGuess.value = "";
+    const choices = ["кот", "ракета", "яблоко", "фонарь", "пингвин", "гитара", "торт", "машина"];
+    const first = choices.splice(Math.floor(Math.random() * choices.length), 1)[0];
+    game = {
+      mode: "draw", phase: "playing", over: false, hostId: myId,
+      players: [{ id: myId, name: ui.name.value.trim() || "Ты", score: 0, color: PLAYER_COLORS[0], online: true }],
+      drawing: { round: 1, roundsTotal: 1, drawerId: myId, stage: "choosing", choices: [first, choices[Math.floor(Math.random() * choices.length)]], word: "", hint: "", hintCount: 0, maxHints: 0, endsAt: Date.now() + 15000, strokes: [], guessedPlayers: [] },
+      chat: []
+    };
+    if (role === "guess") {
+      practiceSketchIndex = (practiceSketchIndex + 1) % practiceSketches.length;
+      const sketch = practiceSketches[practiceSketchIndex];
+      game.players.push({ id: "practice-artist", name: "Пример", score: 0, color: PLAYER_COLORS[1], online: true });
+      game.drawing.drawerId = "practice-artist";
+      game.drawing.strokes = sketch.paths.map(path => ({
+        tool: "pen", color: "#362544", size: .009, points: path.map(([x, y]) => ({ x, y }))
+      }));
+      selectPracticeWord(sketch.word);
+    }
     showGame("draw"); draw();
   }
+  function selectPracticeWord(word) {
+    Object.assign(game.drawing, {
+      word, choices: [], stage: "drawing", endsAt: Date.now() + 60000,
+      hint: [...word].map(() => "_").join(" "), maxHints: Math.floor(word.length / 2)
+    });
+    draw();
+  }
+  function finishPractice(message) {
+    game.phase = "over"; game.over = true; game.drawing.endsAt = 0; activeStroke = null;
+    game.chat.push({ kind: "system", text: message }); draw();
+  }
+  $("practice-draw").addEventListener("click", () => startDrawingPractice("draw"));
+  $("practice-guess").addEventListener("click", () => startDrawingPractice("guess"));
+  $("practice-restart").addEventListener("click", () => startDrawingPractice(practiceRole));
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
   $("solo-start").addEventListener("click", () => { if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
@@ -443,15 +486,32 @@
   $("flag-total").addEventListener("input", () => { flagLimitCustom = true; document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; });
   ui.createBoard.addEventListener("click", () => { const config = chosenSettings(true); if (socket && config && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start", config })); });
   $("start-drawing").addEventListener("click", () => { ui.drawLobbyError.textContent = ""; if (socket?.readyState === WebSocket.OPEN && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start" })); });
-  ui.drawGuessForm.addEventListener("submit", event => { event.preventDefault(); const text = ui.drawGuess.value.trim(); if (!text || !game || game.mode !== "draw") return; if (solo) { ui.drawGuess.value = ""; return; } if (socket?.readyState === WebSocket.OPEN) sendDrawingAction("guess", { text }); ui.drawGuess.value = ""; });
+  ui.drawGuessForm.addEventListener("submit", event => {
+    event.preventDefault();
+    const text = ui.drawGuess.value.trim();
+    if (!text || ui.drawGuess.disabled || game?.mode !== "draw") return;
+    ui.drawGuess.value = "";
+    if (!solo) { sendDrawingAction("guess", { text }); return; }
+    if (text.toLocaleLowerCase("ru") === game.drawing.word) finishPractice("Угадал!");
+    else { game.chat.push({ kind: "chat", name: "Ты", text }); draw(); }
+  });
   document.querySelectorAll(".draw-colors button").forEach(button => { button.style.setProperty("--draw-color", button.dataset.color); button.addEventListener("click", () => { drawingColor = button.dataset.color; document.querySelectorAll(".draw-colors button").forEach(item => item.classList.toggle("selected", item === button)); }); });
   function canPaint() { return game?.mode === "draw" && game.phase === "playing" && game.drawing?.drawerId === myId && game.drawing.stage !== "choosing"; }
   function sendDrawingAction(type, extra = {}) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, round: game?.drawing?.round, ...extra })); }
   for (let index = 0; index < 2; index++) $("draw-choice-" + index).addEventListener("click", () => {
     if (game?.drawing?.stage !== "choosing" || game.drawing.drawerId !== myId) return;
-    sendDrawingAction("chooseWord", { index });
+    if (solo) selectPracticeWord(game.drawing.choices[index]);
+    else sendDrawingAction("chooseWord", { index });
   });
-  $("draw-hint").addEventListener("click", () => { if (canPaint() && !solo) sendDrawingAction("hint"); });
+  $("draw-hint").addEventListener("click", () => {
+    if (!canPaint()) return;
+    if (!solo) { sendDrawingAction("hint"); return; }
+    const drawing = game.drawing;
+    if (drawing.hintCount >= drawing.maxHints) return;
+    drawing.hintCount++;
+    drawing.hint = [...drawing.word].map((letter, index) => index < drawing.hintCount ? letter : "_").join(" ");
+    draw();
+  });
   $("draw-opacity").addEventListener("input", () => { $("draw-opacity-value").textContent = `${$("draw-opacity").value}%`; });
   document.querySelectorAll("[data-draw-tool]").forEach(button => button.addEventListener("click", () => {
     drawingTool = button.dataset.drawTool;

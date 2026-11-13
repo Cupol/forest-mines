@@ -8,7 +8,7 @@
   <title>Круг друзей — игры вместе</title>
   <link rel="stylesheet" href="style.css?v=drawing-tools-2">
   <script src="config.js"></script>
-  <script src="app.js?v=drawing-tools-2" defer></script>
+  <script src="app.js?v=solo-draw-1" defer></script>
 </head>
 <body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -83,6 +83,11 @@
       </section>
       <section id="draw-dashboard" class="draw-layout hidden">
         <div class="draw-main card">
+          <div id="draw-practice-actions" class="head-actions hidden" style="flex-wrap:wrap;margin-bottom:12px">
+            <button id="practice-draw" class="button" type="button">Рисовать</button>
+            <button id="practice-guess" class="button" type="button">Угадывать</button>
+            <button id="practice-restart" class="button" type="button">Начать заново</button>
+          </div>
           <div class="draw-toolbar"><div><span class="eyebrow" id="draw-round-label">РАУНД 1 / 4</span><strong id="draw-clock" class="draw-clock">01:00</strong></div><div id="draw-word" class="draw-word">Ждём ход…</div><div id="draw-turn-label" class="eyebrow">ХУДОЖНИК</div></div>
           <div class="draw-canvas-wrap">
             <canvas id="draw-canvas" class="draw-canvas" width="900" height="540" aria-label="Холст для рисования"></canvas>
