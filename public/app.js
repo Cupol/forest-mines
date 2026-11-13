@@ -34,6 +34,14 @@
     for (let i = 0; i < cells.length; i++) if (!cells[i].mine) cells[i].near = neighbors(i, config).filter(j => cells[j].mine).length;
     return cells;
   }
+  function protectFirstOpen(cells, index, config) {
+    if (cells.some(cell => cell.open) || !cells[index]?.mine) return;
+    const safe = cells.map((cell, i) => !cell.mine && i !== index ? i : -1).filter(i => i >= 0);
+    if (!safe.length) return;
+    const replacement = safe[Math.floor(Math.random() * safe.length)];
+    cells[index].mine = false; cells[replacement].mine = true;
+    for (let i = 0; i < cells.length; i++) cells[i].near = cells[i].mine ? 0 : neighbors(i, config).filter(j => cells[j].mine).length;
+  }
   function neighbors(i, config = game.config) {
     const x = i % config.width, y = Math.floor(i / config.width), out = [];
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
@@ -132,6 +140,7 @@
       return;
     }
     if (cell.open) return;
+    protectFirstOpen(game.cells, index, game.config);
     openCells(floodCandidates(index), id);
     if (solo) scheduleBot(1400 + Math.random() * 1900);
   }

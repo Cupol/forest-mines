@@ -28,6 +28,14 @@ function randomBoard(config: GameConfig): Cell[] {
   for (let i = 0; i < cells.length; i++) if (!cells[i].mine) cells[i].near = neighbours(i, config).filter(j => cells[j].mine).length;
   return cells;
 }
+function protectFirstOpen(cells: Cell[], index: number, config: GameConfig): void {
+  if (cells.some(cell => cell.open) || !cells[index]?.mine) return;
+  const safe = cells.map((cell, i) => !cell.mine && i !== index ? i : -1).filter(i => i >= 0);
+  if (!safe.length) return;
+  const replacement = safe[crypto.getRandomValues(new Uint32Array(1))[0] % safe.length];
+  cells[index].mine = false; cells[replacement].mine = true;
+  for (let i = 0; i < cells.length; i++) cells[i].near = cells[i].mine ? 0 : neighbours(i, config).filter(j => cells[j].mine).length;
+}
 function safeName(value: unknown): string { return String(value ?? "Смотритель").replace(/[<>\u0000-\u001f]/g, "").trim().slice(0, 20) || "Смотритель"; }
 function safeConfig(value: unknown): GameConfig {
   const candidate = value && typeof value === "object" ? value as Partial<GameConfig> : DEFAULT_CONFIG;
@@ -140,6 +148,7 @@ export class GameRoom extends DurableObject<Env> {
         }
       } else {
         if (cell.open) return;
+        if (!this.game.cells.some(candidate => candidate.open)) protectFirstOpen(this.game.cells, index, this.game.config ?? DEFAULT_CONFIG);
         if (cell.mine) {
           cell.open = true; cell.boom = true; cell.by = player.name; player.explosions++;
           this.game.event = { kind: "boom", name: player.name, id: player.id };
