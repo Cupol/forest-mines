@@ -151,7 +151,7 @@
     finishIfDone(); draw();
   }
   function finishIfDone() {
-    const safeCount = game ? game.config.width * game.config.height - game.config.mines : 0;
+    const safeCount = game ? game.cells.length - game.config.mines : 0;
     if (!game || game.over || game.safe < safeCount) return;
     game.over = true; game.phase = "over";
     for (const player of game.players) player.score = player.flags.reduce((sum, index) => sum + (game.cells[index].mine ? 2 : 0), 0) - (player.explosions || 0) * 3;
@@ -193,7 +193,7 @@
     }
     ui.roomSetup.classList.add("hidden"); ui.dashboard.classList.remove("hidden"); ui.heading.textContent = game.over ? "Итоги партии" : "Чьи флажки точнее?";
     const { width, height, mines, flags } = game.config;
-    const safeCount = width * height - mines;
+    const safeCount = Math.max(0, game.cells.length - mines);
     ui.board.replaceChildren();
     ui.board.style.gridTemplateColumns = `repeat(${width}, minmax(21px, 34px))`;
     ui.board.style.gridTemplateRows = `repeat(${height}, minmax(21px, 34px))`;
