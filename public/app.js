@@ -1,4 +1,5 @@
 import { DRAW_WORDS } from "./draw-words.js";
+import { FLEET, shipCells, canPlace } from "./sea-rules.js";
 
 (() => {
   "use strict";
@@ -19,7 +20,8 @@ import { DRAW_WORDS } from "./draw-words.js";
   if (rememberedName) ui.name.value = rememberedName;
   const savedRoom = new URLSearchParams(location.search).get("room");
   const savedMode = new URLSearchParams(location.search).get("game");
-  let selectedMode = savedMode === "draw" ? "draw" : "sapper";
+  const modes = ["sapper", "draw", "sea"];
+  let selectedMode = modes.includes(savedMode) ? savedMode : "sapper";
   if (savedRoom) ui.roomInput.value = savedRoom.toUpperCase().slice(0, 6);
 
   let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, flagLimitCustom = false, roomId = "", myId = "", myToken = "", toastTimer = 0, winnerDismissed = false, drawingColor = "#17201c", activeStroke = null, drawClockTimer = 0;
@@ -29,27 +31,42 @@ import { DRAW_WORDS } from "./draw-words.js";
     const drawing = selectedMode === "draw";
     document.body.dataset.game = selectedMode;
     document.title = drawing ? "Рисуй и угадывай — Круг друзей" : "Сапёр — Круг друзей";
-    $("game-index").textContent = drawing ? "ИГРА 2 / 2" : "ИГРА 1 / 2";
+    $("game-index").textContent = `ИГРА ${modes.indexOf(selectedMode) + 1} / ${modes.length}`;
+    $("landing-cap").textContent = selectedMode === "sea" ? "2 ИГРОКА" : "ДО 20 ИГРОКОВ";
+    $("solo-start").classList.toggle("hidden", selectedMode === "sea");
     $("hero-eyebrow").textContent = drawing ? "СЛОВО ЗАДАНО. ТВОЯ ОЧЕРЕДЬ РИСОВАТЬ." : "ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.";
     $("hero-title").innerHTML = drawing ? "Рисуй и<br><em>угадывай</em>" : "<em>Сапёр</em>";
     $("hero-description").textContent = drawing ? "Рисуй загаданное слово, пока друзья угадывают. Очки получают самые быстрые догадчики." : "Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.";
     $("hero-rules").innerHTML = drawing ? "<span><b>✎</b> рисуй по очереди</span><span><b>⌛</b> угадай за минуту</span><span><b>★</b> очки за скорость</span>" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
     $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
     $("solo-start").textContent = drawing ? "Попробовать одному →" : "Сыграть с ботом →";
+    if (selectedMode === "sea") {
+      document.title = "Морской бой — Круг друзей";
+      $("hero-eyebrow").textContent = "ДУЭЛЬ НА ВОДЕ";
+      $("hero-title").innerHTML = "Морской<br><em>бой</em>";
+      $("hero-description").textContent = "Расставьте корабли и по очереди стреляйте по полю соперника. Побеждает тот, кто первым потопит весь флот.";
+      $("hero-rules").innerHTML = "<span><b>10</b> кораблей</span><span><b>10×10</b> поле</span><span><b>↻</b> попадание даёт ещё ход</span>";
+      $("create-room-text").textContent = "Создать комнату";
+    }
   }
   let switchingGame = false;
-  async function changeGame() {
+  async function changeGame(direction) {
     if (switchingGame || $("create-room").disabled) return;
     switchingGame = true;
     const buttons = [$("game-prev"), $("game-next"), $("create-room"), $("join-room"), $("solo-start")];
     buttons.forEach(button => button.disabled = true);
     const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 200;
+    ui.landing.style.setProperty("--slide-out", `${-direction * 45}px`);
+    ui.landing.style.setProperty("--slide-in", `${direction * 45}px`);
     ui.landing.classList.add("game-switching");
     await new Promise(resolve => setTimeout(resolve, delay));
-    selectedMode = selectedMode === "sapper" ? "draw" : "sapper";
+    selectedMode = modes[(modes.indexOf(selectedMode) + direction + modes.length) % modes.length];
     ui.roomInput.value = ""; showError(""); applySelectedMode();
     history.replaceState({}, "", `${location.pathname}?game=${selectedMode}`);
+    ui.landing.classList.add("game-entering");
     ui.landing.classList.remove("game-switching");
+    void ui.landing.offsetWidth;
+    ui.landing.classList.remove("game-entering");
     await new Promise(resolve => setTimeout(resolve, delay));
     buttons.forEach(button => button.disabled = false); switchingGame = false;
   }
@@ -121,6 +138,7 @@ import { DRAW_WORDS } from "./draw-words.js";
   }
   function enterRoom(code, makeNew) {
     const name = cleanName(); if (!name) return;
+    seaDraft = []; seaVertical = false;
     if (makeNew) flagLimitCustom = false;
     const api = apiAddress();
     if (!api) { showError("Сервер комнаты ещё не подключён. Пока доступна одиночная игра."); return; }
@@ -142,14 +160,15 @@ import { DRAW_WORDS } from "./draw-words.js";
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
       if (message.type === "notice") { if (selectedMode === "draw") ui.drawLobbyError.textContent = message.text || "Действие недоступно."; else setStatus(message.text || "Действие недоступно.", "hit"); return; }
       if (message.type === "state") {
-        selectedMode = message.mode === "draw" ? "draw" : "sapper";
+        selectedMode = modes.includes(message.mode) ? message.mode : "sapper";
         game = { mode: selectedMode, cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "", drawing: message.drawing, chat: message.chat || [] };
+        game.sea = message.sea;
         roomId = message.room || roomId;
         if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${roomId}`, myToken); }
         myId = message.me; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
-        else if (game.over && game.mode !== "draw") showWinner();
-        if (game.phase === "lobby" && game.mode !== "draw") setStatus(game.hostId === myId ? "Комната открыта. Друзья могут присоединяться; выбери поле, когда будете готовы." : "Ты в лобби. Ждём, пока ведущий создаст поле.");
+        else if (game.over && game.mode === "sapper") showWinner();
+        if (game.phase === "lobby" && game.mode === "sapper") setStatus(game.hostId === myId ? "Комната открыта. Друзья могут присоединяться; выбери поле, когда будете готовы." : "Ты в лобби. Ждём, пока ведущий создаст поле.");
       }
     });
     socket.addEventListener("close", () => { if (game && !solo) { setStatus("Связь с комнатой прервалась. Проверь интернет и зайди ещё раз.", "hit"); notify("Соединение закрыто"); } });
@@ -326,8 +345,95 @@ import { DRAW_WORDS } from "./draw-words.js";
     ui.drawClock.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     ui.drawClock.classList.toggle("time-low", seconds <= 10);
   }
+  let seaDraft = [], seaVertical = false;
+  const seaColumns = "АБВГДЕЖЗИК";
+  function seaGrid(id, states, action) {
+    const grid = $(id);
+    const focused = grid.contains(document.activeElement) ? document.activeElement.dataset.cell : undefined;
+    const fragment = document.createDocumentFragment();
+    function axis(label) {
+      const mark = document.createElement("span");
+      mark.className = "sea-axis"; mark.textContent = label;
+      mark.setAttribute("aria-hidden", "true"); fragment.append(mark);
+    }
+    axis("");
+    for (const letter of seaColumns) axis(letter);
+    for (let i = 0; i < 100; i++) {
+      if (i % 10 === 0) axis(String(Math.floor(i / 10) + 1));
+      const cell = document.createElement("button"), state = states.get(i);
+      cell.type = "button";
+      cell.dataset.cell = i;
+      cell.className = "sea-cell" + (state ? " sea-" + state : "");
+      const coordinate = seaColumns[i % 10] + (Math.floor(i / 10) + 1);
+      const labels = { ship: "корабль", miss: "мимо", hit: "попадание", sunk: "потоплен" };
+      cell.setAttribute("aria-label", state ? `${coordinate}, ${labels[state]}` : coordinate);
+      cell.textContent = state === "miss" ? "·" : state === "hit" || state === "sunk" ? "×" : "";
+      cell.disabled = !action || state === "miss" || state === "hit" || state === "sunk";
+      if (!cell.disabled) cell.addEventListener("click", () => action(i));
+      fragment.append(cell);
+    }
+    grid.replaceChildren(fragment);
+    if (focused !== undefined) grid.querySelector(`[data-cell="${focused}"]:enabled`)?.focus();
+  }
+  function drawSea() {
+    for (const panel of [ui.roomSetup, ui.dashboard, ui.drawLobby, ui.drawDashboard]) panel.classList.add("hidden");
+    const sea = game.sea, opponent = game.players.find(player => player.id !== myId);
+    const ownFleet = sea?.ownFleet?.length ? sea.ownFleet : seaDraft;
+    const ready = Boolean(sea?.ownFleet?.length);
+    const placing = game.phase === "lobby" && !ready;
+    const myTurn = game.phase === "playing" && sea?.turn === myId && opponent?.online && socket?.readyState === WebSocket.OPEN;
+    ui.heading.textContent = "Морской бой";
+    ui.copyLink.disabled = false;
+    ui.copyLink.textContent = "Пригласить ↗";
+    ui.phaseHint.textContent = "КОРАБЛИ НЕ СОПРИКАСАЮТСЯ · ПОПАДАНИЕ ДАЁТ ЕЩЁ ХОД";
+    $("sea-status").textContent = game.over ? "Партия завершена" : !opponent?.online ? "Ждём соперника. Можно расставить корабли заранее." :
+      placing ? FLEET[seaDraft.length] ? `Поставь корабль на ${FLEET[seaDraft.length]} кл. · ${seaDraft.length}/10` : "Флот расставлен. Нажми «Готов»." :
+      game.phase === "lobby" ? "Флот готов. Ждём расстановку соперника." : myTurn ? "Твой ход. Выбери клетку на поле соперника." : `Ходит ${opponent.name}.`;
+    $("sea-result").textContent = game.over ? game.winnerId === myId ? "Ты победил!" : `Победил ${opponent?.name ?? "соперник"}.` : "";
+    $("sea-controls").classList.toggle("hidden", !placing);
+    $("sea-target").classList.toggle("hidden", game.phase === "lobby");
+    $("sea-ready").disabled = seaDraft.length !== FLEET.length || !opponent?.online;
+    $("sea-undo").disabled = !seaDraft.length;
+    $("sea-rotate").textContent = seaVertical ? "Вертикально ↻" : "Горизонтально ↻";
+    const own = new Map(ownFleet.flat().map(cell => [cell, "ship"]));
+    for (const cell of sea?.incoming ?? []) own.set(cell, own.has(cell) ? "hit" : "miss");
+    for (const ship of ownFleet) if (ship.every(cell => own.get(cell) === "hit")) for (const cell of ship) own.set(cell, "sunk");
+    const enemy = new Map((sea?.fired ?? []).map(({ cell, hit }) => [cell, hit ? "hit" : "miss"]));
+    for (const cell of (sea?.sunk ?? []).flat()) enemy.set(cell, "sunk");
+    seaGrid("sea-own", own, placing ? start => {
+      const length = FLEET[seaDraft.length];
+      if (!length) return;
+      const cells = shipCells(start, length, seaVertical);
+      if (!canPlace(cells, seaDraft)) { notify("Корабль не помещается или касается другого."); return; }
+      seaDraft.push(cells); drawSea();
+    } : null);
+    seaGrid("sea-enemy", enemy, myTurn ? cell => {
+      socket.send(JSON.stringify({ type: "seaFire", cell }));
+    } : null);
+  }
+  $("sea-rotate").addEventListener("click", () => { seaVertical = !seaVertical; drawSea(); });
+  $("sea-undo").addEventListener("click", () => { seaDraft.pop(); drawSea(); });
+  $("sea-random").addEventListener("click", () => {
+    let fleet = [];
+    while (fleet.length !== FLEET.length) {
+      fleet = [];
+      for (const length of FLEET) {
+        const options = Array.from({ length: 200 }, (_, index) => shipCells(index % 100, length, index >= 100))
+          .filter(cells => canPlace(cells, fleet));
+        if (!options.length) break;
+        fleet.push(options[Math.floor(Math.random() * options.length)]);
+      }
+    }
+    seaDraft = fleet; drawSea();
+  });
+  $("sea-ready").addEventListener("click", () => {
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "seaReady", fleet: seaDraft }));
+  });
+
   function draw() {
     if (!game) return;
+    $("sea-dashboard").classList.toggle("hidden", game.mode !== "sea");
+    if (game.mode === "sea") { drawSea(); return; }
     if (game.mode === "draw") { drawDrawingGame(); return; }
     ui.drawLobby.classList.add("hidden"); ui.drawDashboard.classList.add("hidden");
     if (game.phase === "lobby" || !game.config) {
@@ -498,7 +604,8 @@ import { DRAW_WORDS } from "./draw-words.js";
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
   $("solo-start").addEventListener("click", () => { if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
-  $("game-prev").addEventListener("click", changeGame); $("game-next").addEventListener("click", changeGame);
+  $("game-prev").addEventListener("click", () => changeGame(-1));
+  $("game-next").addEventListener("click", () => changeGame(1));
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
     const config = PRESETS[button.dataset.preset];
     flagLimitCustom = false; $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; refreshAutomaticFlagLimit(true);

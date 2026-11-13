@@ -52,7 +52,27 @@ body[data-game] .game-switch .icon-button:hover{background:var(--panel2);border-
 body[data-game] .game-switch span{color:var(--muted)}
 .game-switch .icon-button{transition:transform .2s ease,background-color .3s ease,border-color .3s ease}
 .landing .intro>:not(.game-switch),.landing .lobby,.landing .bottom-note{transition:opacity .2s ease,transform .24s ease,filter .2s ease}
-.landing.game-switching .intro>:not(.game-switch),.landing.game-switching .lobby,.landing.game-switching .bottom-note{opacity:0;transform:translateY(12px);filter:blur(3px)}
+.landing.game-switching .intro>:not(.game-switch),.landing.game-switching .lobby,.landing.game-switching .bottom-note{opacity:0;transform:translateX(var(--slide-out, -45px))}
+.landing.game-entering .intro>:not(.game-switch),.landing.game-entering .lobby,.landing.game-entering .bottom-note{transition:none;opacity:0;transform:translateX(var(--slide-in, 45px))}
+body[data-game="sea"]{background:#091c2a;--gold:#8ad9e9;--green:#8ad9e9;--line:#35647a}
+body[data-game="sea"] .card{background:#122b3b;border-color:#35647a}
+body[data-game="sea"] .button-primary{background:#8ad9e9;color:#092331;border-color:#a4e6f1}
+.sea-panel{margin-top:14px;padding:clamp(12px,3vw,26px)}
+.sea-controls{flex-wrap:wrap;margin:12px 0}
+.sea-boards{display:grid;grid-template-columns:repeat(2,minmax(0,390px));gap:clamp(12px,3vw,32px)}
+.sea-boards h3{font:500 20px var(--serif);margin:12px 0}
+.sea-grid{display:grid;grid-template-columns:1.6em repeat(10,minmax(0,1fr));gap:2px}
+.sea-axis{display:grid;place-items:center;color:#a4d6ed;font:11px var(--mono)}
+.sea-cell{aspect-ratio:1;min-width:0;padding:0;border:1px solid #35647a;border-radius:3px;background:#193d51;color:#e9f6ff;font:700 clamp(10px,2vw,20px) var(--mono);cursor:pointer}
+.sea-cell:enabled:hover,.sea-cell:focus-visible{background:#376983;outline:2px solid #a4e6f1;outline-offset:-2px}
+.sea-cell:disabled{cursor:default}
+.sea-cell.sea-ship{background:#528496}
+.sea-cell.sea-miss{background:#102c3c;color:#a4d6ed}
+.sea-cell.sea-hit{background:#954f49}
+.sea-cell.sea-sunk{background:#b4513b}
+#sea-result{color:#a4e6f1;font-weight:700}
+@media(max-width:600px){.sea-boards{grid-template-columns:minmax(0,390px)}}
+@media(prefers-reduced-motion:reduce){.landing.game-entering .intro>:not(.game-switch),.landing.game-entering .lobby,.landing.game-entering .bottom-note{opacity:1;transform:none}}
 .landing .intro{min-height:370px;display:flex;flex-direction:column;justify-content:center}
 .draw-canvas-wrap{position:relative;isolation:isolate;border-radius:9px;overflow:hidden;background:var(--paper,#faf4ef)}
 body[data-game] .draw-canvas{display:block;width:100%;height:auto;aspect-ratio:5/3;background:var(--paper,#faf4ef);border:1px solid var(--line);border-radius:9px;touch-action:none}
