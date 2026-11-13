@@ -1,18 +1,23 @@
 (() => {
   "use strict";
-  const W = 16, H = 16, MINES = 33, SAFE_COUNT = 223, FLAG_LIMIT = 17, MAX_PLAYERS = 20;
+  const MAX_PLAYERS = 20;
+  const PRESETS = {
+    small: { width: 12, height: 12, mines: 18, flags: 9 },
+    medium: { width: 16, height: 16, mines: 33, flags: 17 },
+    large: { width: 24, height: 24, mines: 75, flags: 30 }
+  };
   const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#f39a5e", "#65d2bb", "#df8add", "#a9bdff", "#d2dc72", "#ff8580", "#80d8e8", "#ffc978", "#90b8f0", "#c2dc85", "#eea7c7", "#70d5a0", "#e8a567", "#9e9cf2", "#c7d0da"];
   const $ = id => document.getElementById(id);
   const ui = {
     landing: $("landing"), game: $("game"), name: $("player-name"), roomInput: $("room-code"), error: $("lobby-error"), board: $("board"), playerList: $("players-list"), status: $("game-status"),
-    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast")
+    connection: $("connection-label"), room: $("room-label"), shareCode: $("share-code"), playerCount: $("player-count"), flagsLeft: $("flags-left"), flagCap: $("flag-cap"), found: $("found-count"), mineCount: $("mine-count"), safe: $("safe-count"), progress: $("progress-bar"), score: $("my-score"), flagMode: $("flag-mode"), toast: $("toast"), start: $("start-game"), settingsSummary: $("settings-summary"), phaseHint: $("phase-hint"), copyLink: $("copy-link")
   };
   const rememberedName = localStorage.getItem("forest-mines-name");
   if (rememberedName) ui.name.value = rememberedName;
   const savedRoom = new URLSearchParams(location.search).get("room");
   if (savedRoom) ui.roomInput.value = savedRoom.toUpperCase().slice(0, 6);
 
-  let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, roomId = "", myId = "", toastTimer = 0;
+  let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, roomId = "", myId = "", myToken = "", toastTimer = 0;
   function showError(message) { ui.error.textContent = message; }
   function notify(message) { ui.toast.textContent = message; ui.toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 2600); }
   function setStatus(message, mood = "") { ui.status.lastElementChild.textContent = message; ui.status.classList.toggle("hit", mood === "hit"); ui.status.classList.toggle("found", mood === "found"); }
@@ -22,24 +27,24 @@
     if (!value) { showError("Напиши имя смотрителя — хотя бы одно слово."); ui.name.focus(); return ""; }
     localStorage.setItem("forest-mines-name", value); showError(""); return value;
   }
-  function makeBoard() {
-    const cells = Array.from({ length: W * H }, () => ({ mine: false, near: 0, open: false, boom: false, by: "" }));
+  function makeBoard(config) {
+    const cells = Array.from({ length: config.width * config.height }, () => ({ mine: false, near: 0, open: false, boom: false, by: "" }));
     let count = 0;
-    while (count < MINES) { const i = Math.floor(Math.random() * cells.length); if (!cells[i].mine) { cells[i].mine = true; count++; } }
-    for (let i = 0; i < cells.length; i++) if (!cells[i].mine) cells[i].near = neighbors(i).filter(j => cells[j].mine).length;
+    while (count < config.mines) { const i = Math.floor(Math.random() * cells.length); if (!cells[i].mine) { cells[i].mine = true; count++; } }
+    for (let i = 0; i < cells.length; i++) if (!cells[i].mine) cells[i].near = neighbors(i, config).filter(j => cells[j].mine).length;
     return cells;
   }
-  function neighbors(i) {
-    const x = i % W, y = Math.floor(i / W), out = [];
+  function neighbors(i, config = game.config) {
+    const x = i % config.width, y = Math.floor(i / config.width), out = [];
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if ((!dx && !dy) || x + dx < 0 || x + dx >= W || y + dy < 0 || y + dy >= H) continue;
-      out.push((y + dy) * W + x + dx);
+      if ((!dx && !dy) || x + dx < 0 || x + dx >= config.width || y + dy < 0 || y + dy >= config.height) continue;
+      out.push((y + dy) * config.width + x + dx);
     }
     return out;
   }
-  function startView(id, mode) {
+  function startView(id, mode, config) {
     roomId = id; solo = mode === "solo"; myId = "local-player";
-    game = { cells: makeBoard(), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, over: false };
+    game = { config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false };
     showGame(mode); draw(); setStatus(solo ? "Лесной дух вышел на тропу. Найди его следы." : "Комната создана. Позови остальных за стол.");
   }
   function showGame(mode) {
@@ -52,13 +57,25 @@
     if (!raw) return "";
     return raw.replace(/^http:/i, "ws:").replace(/^https:/i, "wss:").replace(/\/$/, "");
   }
-  function enterRoom(code, makeNew) {
+  function chosenSettings() {
+    const config = { width: Number($("board-width").value), height: Number($("board-height").value), mines: Number($("mine-total").value), flags: Number($("flag-total").value) };
+    const total = config.width * config.height;
+    if (![config.width, config.height, config.mines, config.flags].every(Number.isInteger) || config.width < 8 || config.width > 30 || config.height < 8 || config.height > 30 || config.mines < 1 || config.mines >= total || config.flags < 1 || config.flags > total) {
+      showError("Размер поля: от 8 до 30 клеток по каждой стороне. Укажи допустимое число мин и флажков."); return null;
+    }
+    showError(""); return config;
+  }
+  function enterRoom(code, makeNew, config = null) {
     const name = cleanName(); if (!name) return;
+    if (makeNew && !config) config = chosenSettings();
+    if (makeNew && !config) return;
     const api = apiAddress();
     if (!api) { showError("Сервер комнаты ещё не подключён. Пока можно сыграть одному против лесного духа."); return; }
     roomId = code;
     myId = localStorage.getItem(`forest-mines-player:${roomId}`) || newId();
+    myToken = localStorage.getItem(`forest-mines-token:${roomId}`) || `${newId()}${newId()}`;
     localStorage.setItem(`forest-mines-player:${roomId}`, myId);
+    localStorage.setItem(`forest-mines-token:${roomId}`, myToken);
     [$("create-room"), $("join-room")].forEach(b => b.disabled = true);
     showError("Открываю дверь в комнату…");
     const protocol = api.includes("wss:") ? "wss:" : "ws:";
@@ -66,15 +83,17 @@
     try {
       socket = new WebSocket(`${protocol}//${host}/api/room/${encodeURIComponent(roomId)}?create=${makeNew ? "1" : "0"}`);
     } catch (_) { [$("create-room"), $("join-room")].forEach(b => b.disabled = false); showError("Не удалось открыть соединение. Проверь адрес сервера."); return; }
-    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "join", id: myId, name, create: makeNew })));
+    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "join", id: myId, token: myToken, name, create: makeNew, config })));
     socket.addEventListener("message", event => {
       let message; try { message = JSON.parse(event.data); } catch (_) { return; }
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
       if (message.type === "notice") { setStatus(message.text || "Действие недоступно.", "hit"); return; }
       if (message.type === "state") {
-        game = { cells: message.cells, players: message.players, safe: message.safe, over: message.over };
+        game = { cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over };
+        if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${message.room}`, myToken); }
         myId = message.me; roomId = message.room; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
+        if (game.phase === "lobby") setStatus(game.hostId === myId ? "Комната открыта: дождись друзей и нажми «Начать партию»." : "Ты в лобби. Игра начнётся, когда ведущий нажмёт кнопку старта.");
       }
     });
     socket.addEventListener("close", () => { if (game && !solo) { setStatus("Связь с комнатой прервалась. Проверь интернет и зайди ещё раз.", "hit"); notify("Соединение закрыто"); } });
@@ -88,7 +107,7 @@
     if (returnToMenu) { ui.game.classList.add("hidden"); ui.landing.classList.remove("hidden"); ui.connection.textContent = "ОДИНОЧНЫЙ РЕЖИМ"; history.replaceState({}, "", location.pathname); }
   }
   function sendAction(type, index) {
-    if (!game || game.over) return;
+    if (!game || game.over || game.phase !== "playing") return;
     if (!solo) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, index })); return; }
     localAction(myId, type, index);
   }
@@ -102,7 +121,7 @@
       if (existing >= 0) flags.splice(existing, 1);
       else {
         if (cell.open) return;
-        if (flags.length >= FLAG_LIMIT) { if (id === myId) setStatus("У тебя уже стоят все 17 флажков. Сними один, чтобы переставить.", "hit"); return; }
+        if (flags.length >= game.config.flags) { if (id === myId) setStatus(`У тебя уже стоят все ${game.config.flags} флажков. Сними один, чтобы переставить.`, "hit"); return; }
         flags.push(index);
       }
       if (id === myId) setStatus(existing >= 0 ? "Флажок снят — место снова свободно." : "Твоя цветная метка поставлена. Мины проверят в конце.");
@@ -125,8 +144,9 @@
     finishIfDone(); draw();
   }
   function finishIfDone() {
-    if (!game || game.over || game.safe < SAFE_COUNT) return;
-    game.over = true;
+    const safeCount = game ? game.config.width * game.config.height - game.config.mines : 0;
+    if (!game || game.over || game.safe < safeCount) return;
+    game.over = true; game.phase = "over";
     for (const player of game.players) player.score = player.flags.reduce((sum, index) => sum + (game.cells[index].mine ? 2 : 0), 0);
     const top = Math.max(...game.players.map(player => player.score));
     const winners = game.players.filter(player => player.score === top).map(player => player.name);
@@ -139,11 +159,16 @@
       const winners = game.players.filter(player => player.score === top).map(player => player.name);
       setStatus(`Итог: ${winners.join(", ")} — ${top} очков за точные флажки.`, "found");
     }
+    else if (event.kind === "started") setStatus("Партия началась. Новые игроки уже не могут войти.");
     else if (event.kind === "joined") notify(`${event.name} сел за стол`);
   }
   function draw() {
     if (!game) return;
+    const { width, height, mines, flags } = game.config;
+    const safeCount = width * height - mines;
     ui.board.replaceChildren();
+    ui.board.style.gridTemplateColumns = `repeat(${width}, minmax(21px, 34px))`;
+    ui.board.style.gridTemplateRows = `repeat(${height}, minmax(21px, 34px))`;
     const fragment = document.createDocumentFragment();
     for (let i = 0; i < game.cells.length; i++) {
       const c = game.cells[i], button = document.createElement("button"); button.type = "button"; button.className = "cell"; button.setAttribute("role", "gridcell"); button.dataset.index = i;
@@ -161,21 +186,26 @@
         if (owners.length > 3) { const extra = document.createElement("small"); extra.textContent = `+${owners.length - 3}`; stack.append(extra); }
         button.append(stack); button.setAttribute("aria-label", `Флажки: ${owners.map(owner => owner.name).join(", ")}`);
       } else if (!c.open) button.setAttribute("aria-label", "Неизвестная клетка");
-      if ((c.open && !personalFlags(myId).includes(i)) || game.over) button.disabled = true;
+      if (game.phase !== "playing" || (c.open && !personalFlags(myId).includes(i)) || game.over) button.disabled = true;
       button.addEventListener("click", () => { if (flagMode) sendAction("flag", i); else sendAction("open", i); });
       button.addEventListener("contextmenu", event => { event.preventDefault(); sendAction("flag", i); });
       fragment.appendChild(button);
     }
     ui.board.appendChild(fragment);
-    ui.found.textContent = game.safe; ui.safe.textContent = Math.max(0, SAFE_COUNT - game.safe); ui.mineCount.textContent = MINES; ui.progress.style.width = `${100 * game.safe / SAFE_COUNT}%`;
+    ui.found.textContent = game.safe; ui.safe.textContent = Math.max(0, safeCount - game.safe); ui.mineCount.textContent = mines; ui.progress.style.width = `${100 * game.safe / safeCount}%`;
     const me = currentPlayer(); ui.score.textContent = game.over && me ? me.score : "—";
     const label = document.getElementById("score-label"); if (label) label.textContent = game.over ? "ТВОЙ ИТОГ" : "РЕЗУЛЬТАТ В КОНЦЕ";
-    ui.flagsLeft.textContent = Math.max(0, FLAG_LIMIT - (me?.flags.length || 0)); ui.flagCap.textContent = FLAG_LIMIT;
+    ui.flagsLeft.textContent = Math.max(0, flags - (me?.flags.length || 0)); ui.flagCap.textContent = flags;
     ui.playerCount.textContent = `${game.players.filter(p => p.online !== false).length} / ${MAX_PLAYERS}`;
+    ui.settingsSummary.textContent = `${width} × ${height}  ·  ${mines} мин  ·  ${flags} флажков каждому`;
+    ui.start.classList.toggle("hidden", game.phase !== "lobby" || game.hostId !== myId);
+    ui.copyLink.disabled = game.phase !== "lobby";
+    ui.copyLink.textContent = game.phase === "lobby" ? "Пригласить ↗" : "Набор закрыт";
+    ui.phaseHint.textContent = game.phase === "lobby" ? "ИГРОКИ МОГУТ ВОЙТИ ПО ССЫЛКЕ, ПОКА КОМНАТА В ЛОББИ" : game.phase === "over" ? "МИНЫ ОТКРЫТЫ · РЕЗУЛЬТАТ ПАРТИИ ПОДСЧИТАН" : "ВХОД ЗАКРЫТ · ПАРТИЯ УЖЕ НАЧАЛАСЬ";
     ui.playerList.replaceChildren();
     for (const [rank, player] of game.players.toSorted((a, b) => b.score - a.score).entries()) {
       const row = document.createElement("li"), points = document.createElement("span"), avatar = document.createElement("span"), details = document.createElement("span"), name = document.createElement("span"), resources = document.createElement("span");
-      const left = Math.max(0, FLAG_LIMIT - (player.flags?.length || 0));
+      const left = Math.max(0, flags - (player.flags?.length || 0));
       row.className = "player-row" + (player.id === myId ? " player-me" : ""); avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); avatar.style.color = player.color || PLAYER_COLORS[0]; details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.online === false ? " · вышел" : ""); resources.className = "player-sub"; resources.textContent = `⚑ ${left} свободно`; points.className = "player-points"; points.textContent = game.over ? String(player.score) : "—";
       details.append(name, resources); row.append(avatar, details, points); ui.playerList.append(row);
     }
@@ -205,7 +235,7 @@
       const safeArea = floodCandidates(picked.i);
       openCells(safeArea, bot.id);
     } else if (foundTarget != null) {
-      if (bot.flags.length >= FLAG_LIMIT) bot.flags.shift();
+      if (bot.flags.length >= game.config.flags) bot.flags.shift();
       bot.flags.push(foundTarget); draw();
     } else openCells(floodCandidates(safeTarget), bot.id);
     scheduleBot(1250 + Math.random() * 1900);
@@ -217,9 +247,16 @@
     return [...found];
   }
   function makeRoomCode() { const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join(""); }
-  $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
+  $("create-room").addEventListener("click", () => { const config = chosenSettings(); if (config) enterRoom(makeRoomCode(), true, config); });
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (!cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo"); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { const config = chosenSettings(); if (!config || !cleanName()) return; roomId = "ДУЭЛЬ"; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Лесной дух", score: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
+    const config = PRESETS[button.dataset.preset];
+    $("board-width").value = config.width; $("board-height").value = config.height; $("mine-total").value = config.mines; $("flag-total").value = config.flags;
+    document.querySelectorAll("[data-preset]").forEach(item => item.classList.toggle("selected", item === button)); showError("");
+  });
+  for (const id of ["board-width", "board-height", "mine-total", "flag-total"]) $(id).addEventListener("input", () => document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")));
+  ui.start.addEventListener("click", () => { if (socket && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start" })); });
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   $("leave-room").addEventListener("click", () => teardown());
   $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });

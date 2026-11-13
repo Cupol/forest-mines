@@ -1,43 +1,50 @@
 import { DurableObject } from "cloudflare:workers";
 
-const WIDTH = 16;
-const HEIGHT = 16;
-const MINE_COUNT = 33;
-const FLAG_LIMIT = 17;
+const DEFAULT_CONFIG: GameConfig = { width: 16, height: 16, mines: 33, flags: 17 };
 const MAX_PLAYERS = 20;
 const KEY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#f39a5e", "#65d2bb", "#df8add", "#a9bdff", "#d2dc72", "#ff8580", "#80d8e8", "#ffc978", "#90b8f0", "#c2dc85", "#eea7c7", "#70d5a0", "#e8a567", "#9e9cf2", "#c7d0da"];
 
 interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
+interface GameConfig { width: number; height: number; mines: number; flags: number }
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
-interface Player { id: string; name: string; score: number; color: string; flags: number[]; online: boolean }
-interface Game { cells: Cell[]; players: Player[]; safe: number; over: boolean; event: { kind: string; name: string; id: string } | null }
+interface Player { id: string; token: string; name: string; score: number; color: string; flags: number[]; online: boolean }
+interface Game { config: GameConfig; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
-function neighbours(i: number): number[] {
-  const x = i % WIDTH, y = Math.floor(i / WIDTH), result: number[] = [];
+function neighbours(i: number, config: GameConfig): number[] {
+  const x = i % config.width, y = Math.floor(i / config.width), result: number[] = [];
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-    if ((!dx && !dy) || x + dx < 0 || x + dx >= WIDTH || y + dy < 0 || y + dy >= HEIGHT) continue;
-    result.push((y + dy) * WIDTH + x + dx);
+    if ((!dx && !dy) || x + dx < 0 || x + dx >= config.width || y + dy < 0 || y + dy >= config.height) continue;
+    result.push((y + dy) * config.width + x + dx);
   }
   return result;
 }
-function randomBoard(): Cell[] {
-  const cells: Cell[] = Array.from({ length: WIDTH * HEIGHT }, () => ({ mine: false, near: 0, open: false, boom: false, by: "" }));
+function randomBoard(config: GameConfig): Cell[] {
+  const cells: Cell[] = Array.from({ length: config.width * config.height }, () => ({ mine: false, near: 0, open: false, boom: false, by: "" }));
   const order = Array.from({ length: cells.length }, (_, i) => i);
   for (let i = order.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [order[i], order[j]] = [order[j], order[i]]; }
-  for (const index of order.slice(0, MINE_COUNT)) cells[index].mine = true;
-  for (let i = 0; i < cells.length; i++) if (!cells[i].mine) cells[i].near = neighbours(i).filter(j => cells[j].mine).length;
+  for (const index of order.slice(0, config.mines)) cells[index].mine = true;
+  for (let i = 0; i < cells.length; i++) if (!cells[i].mine) cells[i].near = neighbours(i, config).filter(j => cells[j].mine).length;
   return cells;
 }
 function safeName(value: unknown): string { return String(value ?? "Смотритель").replace(/[<>\u0000-\u001f]/g, "").trim().slice(0, 20) || "Смотритель"; }
-function freshGame(): Game { return { cells: randomBoard(), players: [], safe: 0, over: false, event: null }; }
+function safeConfig(value: unknown): GameConfig {
+  const candidate = value && typeof value === "object" ? value as Partial<GameConfig> : DEFAULT_CONFIG;
+  const width = Math.max(8, Math.min(30, Math.round(Number(candidate.width) || DEFAULT_CONFIG.width)));
+  const height = Math.max(8, Math.min(30, Math.round(Number(candidate.height) || DEFAULT_CONFIG.height)));
+  const total = width * height;
+  const mines = Math.max(1, Math.min(total - 1, Math.round(Number(candidate.mines) || DEFAULT_CONFIG.mines)));
+  const flags = Math.max(1, Math.min(total, Math.round(Number(candidate.flags) || DEFAULT_CONFIG.flags)));
+  return { width, height, mines, flags };
+}
+function freshGame(config: GameConfig): Game { return { config, cells: randomBoard(config), players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null }; }
 function stripSecrets(game: Game, me: Player) {
   return {
     type: "state", room: "", me: me.id,
     cells: game.cells.map(c => c.open || game.over ? { open: true, mine: c.mine, near: c.near, boom: false, by: c.by } : { open: false }),
     players: game.players.map(({ id, name, score, color, flags, online }) => ({ id, name, score: game.over ? score : 0, color, flags, online })),
-    safe: game.safe, over: game.over, event: game.event,
+    config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, event: game.event,
   };
 }
 
@@ -65,7 +72,12 @@ export class GameRoom extends DurableObject<Env> {
     super(ctx, env);
     this.init = ctx.blockConcurrencyWhile(async () => {
       this.game = await ctx.storage.get<Game>("game") ?? null;
-      this.game?.players.forEach((player, index) => { player.color ??= PLAYER_COLORS[index % PLAYER_COLORS.length]; player.flags ??= []; player.score ??= 0; });
+      if (this.game) {
+        this.game.config ??= { ...DEFAULT_CONFIG };
+        this.game.phase ??= this.game.over ? "over" : "playing";
+        this.game.hostId ??= this.game.players[0]?.id ?? "";
+        this.game.players.forEach((player, index) => { player.token ??= crypto.randomUUID(); player.color ??= PLAYER_COLORS[index % PLAYER_COLORS.length]; player.flags ??= []; player.score ??= 0; });
+      }
     });
   }
 
@@ -99,9 +111,14 @@ export class GameRoom extends DurableObject<Env> {
       if (packet.type === "join") { await this.join(socket, packet); return; }
       if (!this.game) return;
       if (!attachment?.id || !this.game.players.some(p => p.id === attachment.id)) return;
+      if (packet.type === "start") {
+        if (this.game.phase !== "lobby" || this.game.hostId !== attachment.id) return;
+        this.game.phase = "playing"; this.game.event = { kind: "started", name: "", id: attachment.id };
+        await this.publish(); return;
+      }
       if (packet.type !== "open" && packet.type !== "flag") return;
       const index = Number(packet.index);
-      if (!Number.isInteger(index) || index < 0 || index >= this.game.cells.length || this.game.over) return;
+      if (!Number.isInteger(index) || index < 0 || index >= this.game.cells.length || this.game.phase !== "playing" || this.game.over) return;
       const player = this.game.players.find(p => p.id === attachment.id)!;
       const cell = this.game.cells[index];
       this.game.event = null;
@@ -110,15 +127,15 @@ export class GameRoom extends DurableObject<Env> {
         if (already >= 0) player.flags.splice(already, 1);
         else {
           if (cell.open) return;
-          if (player.flags.length >= FLAG_LIMIT) { socket.send(JSON.stringify({ type: "notice", text: "На поле можно поставить не больше 17 своих флажков. Сними один, чтобы поставить другой." })); return; }
+          if (player.flags.length >= this.game.config.flags) { socket.send(JSON.stringify({ type: "notice", text: `На поле можно поставить не больше ${this.game.config.flags} своих флажков. Сними один, чтобы поставить другой.` })); return; }
           player.flags.push(index);
         }
       } else {
         if (cell.open) return;
         if (!cell.mine) {
           const opened = new Set([index]), queue = [index];
-          while (queue.length) { const next = queue.shift()!; this.game.cells[next].open = true; this.game.cells[next].by = player.name; this.game.safe++; if (this.game.cells[next].near) continue; for (const neighbour of neighbours(next)) if (!this.game.cells[neighbour].open && !this.game.cells[neighbour].mine && !opened.has(neighbour)) { opened.add(neighbour); queue.push(neighbour); } }
-          if (this.game.safe >= WIDTH * HEIGHT - MINE_COUNT) this.finishIfDone();
+          while (queue.length) { const next = queue.shift()!; this.game.cells[next].open = true; this.game.cells[next].by = player.name; this.game.safe++; if (this.game.cells[next].near) continue; for (const neighbour of neighbours(next, this.game.config)) if (!this.game.cells[neighbour].open && !this.game.cells[neighbour].mine && !opened.has(neighbour)) { opened.add(neighbour); queue.push(neighbour); } }
+          if (this.game.safe >= this.game.config.width * this.game.config.height - this.game.config.mines) this.finishIfDone();
         }
       }
       await this.publish();
@@ -131,24 +148,30 @@ export class GameRoom extends DurableObject<Env> {
       socket.close(1008, "room not found");
       return;
     }
-    if (!this.game) this.game = freshGame();
+    if (!this.game) this.game = freshGame(safeConfig(packet.config));
     const id = /^[\w-]{8,64}$/.test(String(packet.id ?? "")) ? String(packet.id) : crypto.randomUUID();
+    const token = /^[\w-]{16,100}$/.test(String(packet.token ?? "")) ? String(packet.token) : "";
     const name = safeName(packet.name);
     let player = this.game.players.find(p => p.id === id);
     if (!player) {
+      if (this.game.phase !== "lobby") { socket.send(JSON.stringify({ type: "error", message: "Партия уже началась. Новые игроки входят только в лобби." })); socket.close(1008, "game already started"); return; }
       if (this.game.players.filter(p => p.online).length >= MAX_PLAYERS) { socket.send(JSON.stringify({ type: "error", message: "В комнате уже 20 игроков." })); socket.close(1008, "room full"); return; }
       const usedColors = new Set(this.game.players.map(p => p.color));
-      player = { id, name, score: 0, color: PLAYER_COLORS.find(color => !usedColors.has(color)) ?? PLAYER_COLORS[this.game.players.length % PLAYER_COLORS.length], flags: [], online: true };
+      player = { id, token: token || crypto.randomUUID(), name, score: 0, color: PLAYER_COLORS.find(color => !usedColors.has(color)) ?? PLAYER_COLORS[this.game.players.length % PLAYER_COLORS.length], flags: [], online: true };
       this.game.players.push(player);
+      if (!this.game.hostId) this.game.hostId = id;
       this.game.event = { kind: "joined", name, id };
-    } else { player.name = name; player.online = true; player.flags ??= []; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (!this.game.over) player.score = 0; }
+    } else {
+      if (!token || token !== player.token) { socket.send(JSON.stringify({ type: "error", message: "Не удалось подтвердить участника комнаты. Создай новую комнату или проверь ссылку." })); socket.close(1008, "invalid player token"); return; }
+      player.name = name; player.online = true; player.flags ??= []; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (!this.game.over) player.score = 0;
+    }
     socket.serializeAttachment({ id, name } satisfies Identity);
     await this.publish();
   }
 
   private finishIfDone() {
     if (!this.game || this.game.over) return;
-    this.game.over = true;
+    this.game.over = true; this.game.phase = "over";
     for (const player of this.game.players) player.score = player.flags.reduce((score, index) => score + (this.game!.cells[index].mine ? 2 : 0), 0);
     this.game.event = { kind: "finished", name: "", id: "" };
   }
@@ -172,6 +195,7 @@ export class GameRoom extends DurableObject<Env> {
     if (!this.game || !identity?.id) return;
     const player = this.game.players.find(p => p.id === identity.id);
     if (player) player.online = false;
+    if (this.game.phase === "lobby" && this.game.hostId === identity.id) this.game.hostId = this.game.players.find(p => p.online)?.id ?? identity.id;
     if (this.ctx.getWebSockets().filter(ws => ws.readyState === WebSocket.OPEN).length === 0) await this.ctx.storage.setAlarm(Date.now() + 6 * 60 * 60 * 1000);
     await this.publish();
   }
