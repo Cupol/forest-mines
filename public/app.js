@@ -184,8 +184,9 @@
       if (needed === 0 && around.length) { safeTarget = around.find(i => !game.cells[i].mine) ?? around[0]; break; }
     }
     if (foundTarget == null && safeTarget == null) {
-      const safe = unknown.filter(x => !x.c.mine && !game.myFlags.includes(x.i) && !bot.flags.includes(x.i));
-      const pool = safe.length ? safe : unknown.filter(x => !bot.flags.includes(x.i));
+      // With no forced deduction the spirit takes a true guess; it does not
+      // consult the hidden mine layout to avoid risk.
+      const pool = unknown.filter(x => !bot.flags.includes(x.i));
       if (!pool.length) return;
       const picked = pool[Math.floor(Math.random() * pool.length)];
       const safeArea = floodCandidates(picked.i);
