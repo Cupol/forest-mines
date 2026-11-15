@@ -169,3 +169,13 @@ body[data-game="cards"] .card{background:radial-gradient(ellipse at top,#1d5e44,
 @keyframes table-flip{from{transform:perspective(400px) rotateY(75deg)}to{transform:none}}
 @keyframes table-win{50%{filter:drop-shadow(0 0 15px #e7b96b)}}
 @media(prefers-reduced-motion:reduce){.table-latest,.table-won,.playing-card{animation:none!important}.gallery-card{transition:none}.gallery-card:hover{transform:none}}
+body[data-game="sea"]{--bg:#091c2a;--panel:#102b3d;--panel2:#173b50;--soft:#c6e5f0;--primary-ink:#092331}
+body[data-game="typing"]{--bg:#251b15;--panel:#332219;--panel2:#4c3223;--soft:#f0dcc6;--primary-ink:#2b1b0e}
+body[data-game="four"]{--bg:#291614;--panel:#33201d;--panel2:#523227;--soft:#f6d5bd;--primary-ink:#34170e}
+body[data-game="pairs"]{--bg:#18142d;--panel:#292142;--panel2:#3d305d;--soft:#e8dcff;--primary-ink:#221439}
+body[data-game="cards"]{--bg:#09291f;--panel:#10382b;--panel2:#20523d;--soft:#d3efdd;--primary-ink:#112d20}
+body[data-game="sea"] .forest-sky{background:repeating-radial-gradient(ellipse at 50% 120%,#60cce322 0 1px,transparent 3px 42px),radial-gradient(ellipse at top,#236387,transparent 65%)}
+body[data-game="typing"] .forest-sky{background:repeating-linear-gradient(0deg,transparent 0 27px,#ffc48613 28px 29px),radial-gradient(ellipse at 85% 0%,#9a542c66,transparent 60%)}
+body[data-game="four"] .forest-sky{background:radial-gradient(circle at 22% 18%,#b34b3255,transparent 40%),radial-gradient(circle at 85% 76%,#e89d4a40,transparent 47%)}
+body[data-game="pairs"] .forest-sky{background:radial-gradient(circle,#b5a1df44 1px,transparent 1.5px) 0 0/24px 24px,radial-gradient(ellipse at top,#534088,transparent 70%)}
+body[data-game="cards"] .forest-sky{background:radial-gradient(ellipse at top,#3c997351,transparent 66%),repeating-linear-gradient(45deg,transparent 0 7px,#74c69d0b 8px 9px)}
