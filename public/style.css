@@ -179,3 +179,41 @@ body[data-game="typing"] .forest-sky{background:repeating-linear-gradient(0deg,t
 body[data-game="four"] .forest-sky{background:radial-gradient(circle at 22% 18%,#b34b3255,transparent 40%),radial-gradient(circle at 85% 76%,#e89d4a40,transparent 47%)}
 body[data-game="pairs"] .forest-sky{background:radial-gradient(circle,#b5a1df44 1px,transparent 1.5px) 0 0/24px 24px,radial-gradient(ellipse at top,#534088,transparent 70%)}
 body[data-game="cards"] .forest-sky{background:radial-gradient(ellipse at top,#3c997351,transparent 66%),repeating-linear-gradient(45deg,transparent 0 7px,#74c69d0b 8px 9px)}
+/* Each game has a board shape and panel arrangement of its own. */
+body[data-game="sapper"] .card,body[data-game="sapper"] .cell,body[data-game="sapper"] .button{border-radius:0}
+body[data-game="sapper"] .board-panel{border-inline-start:4px solid var(--gold)}
+body[data-game="draw"] .card{border-radius:28px 8px 28px 8px}
+body[data-game="draw"] .draw-side{border-top:4px solid #eea49e}
+body[data-game="draw"] .draw-canvas{border:6px solid #d3b8e0;border-radius:19px 5px 19px 5px}
+body[data-game="sea"] .sea-panel{border-radius:6px 6px 42px 42px;border-bottom:5px double #568eac}
+body[data-game="sea"] .sea-boards{justify-content:center}
+body[data-game="sea"] .sea-grid{padding:6px;border:1px solid #3d8197;border-radius:2px;background:#0d2638}
+body[data-game="typing"] .typing-panel{max-width:800px;margin-inline:auto;width:100%;border-radius:3px 24px 3px 3px;border-left:8px solid #a27650}
+body[data-game="typing"] #typing-prompt{padding:20px;background:#231910;border-block:1px dashed #a27650}
+body[data-game="typing"] #typing-results{display:flex;flex-wrap:wrap;gap:8px 28px}
+body[data-game="four"] .table-panel{max-width:720px;width:100%;margin-inline:auto;text-align:center;border-radius:42px 42px 5px 5px}
+body[data-game="four"] .table-board{margin-inline:auto;border-width:4px}
+body[data-game="four"] .table-scores{justify-content:center}
+body[data-game="pairs"] .table-panel{border-radius:8px;max-width:840px;width:100%;margin-inline:auto}
+body[data-game="pairs"] .table-pairs{margin-inline:auto;max-width:560px;gap:12px}
+body[data-game="pairs"] .table-cell{aspect-ratio:4/3;border-radius:4px 18px 4px 18px;box-shadow:0 4px 0 #191227}
+body[data-game="pairs"] .table-cell:not(.table-face){background:repeating-linear-gradient(135deg,#31284b 0 5px,#382d55 5px 10px)}
+body[data-game="cards"] .table-panel{max-width:850px;width:100%;margin-inline:auto;text-align:center;border:5px double #56876d;border-radius:70px}
+body[data-game="cards"] .table-scores,body[data-game="cards"] .twenty-one-hand{justify-content:center}
+body[data-game="cards"] .playing-card{border-radius:5px}
+body[data-game="reaction"]{--bg:#17162a;--panel:#272443;--panel2:#352f59;--line:#61578f;--soft:#ede4ff;--gold:#ffed7a;--green:#87efac;--primary-ink:#201d12}
+body[data-game="reaction"] .forest-sky{background:radial-gradient(circle at 70% 5%,#7866ba,transparent 50%),linear-gradient(135deg,#321e49,transparent)}
+body[data-game="reaction"] .table-panel{border-radius:35px;max-width:660px;width:100%;margin-inline:auto;text-align:center}
+body[data-game="reaction"] .table-scores{justify-content:center}
+.reaction-board{display:block;margin:12px auto}
+.reaction-pad{display:grid;place-items:center;width:100%;min-height:clamp(110px,28vw,210px);padding:16px;border:3px solid #a289d0;border-radius:999px;background:#342752;color:#f6ecff;font:800 clamp(19px,5vw,40px) var(--sans);cursor:pointer}
+.reaction-pad.signal-ready{background:#80ef9f;color:#0c3120;border-color:#bbffcd;box-shadow:0 0 36px #6cf69b66}
+.reaction-pad:disabled{cursor:default}
+@media(min-width:780px){
+  body[data-game="sea"] .intro{grid-column:2;grid-row:1}
+  body[data-game="sea"] .lobby{grid-column:1;grid-row:1}
+  body[data-game="typing"] .landing{grid-template-columns:minmax(0,1.25fr) minmax(0,.75fr)}
+  body[data-game="pairs"] .table-panel{display:grid;grid-template-columns:minmax(160px,1fr) minmax(0,2fr);column-gap:26px;align-items:start}
+  body[data-game="pairs"] #table-board{grid-column:2;grid-row:1/span 6;width:100%}
+}
+@media(max-width:550px){body[data-game="cards"] .table-panel{border-radius:32px}}

@@ -11,10 +11,11 @@ interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number }
 import { TYPING_TEXTS } from "../../public/typing-texts.js";
 
-type GameMode = "sapper" | "draw" | "sea" | "typing" | "four" | "pairs" | "cards";
+type GameMode = "sapper" | "draw" | "sea" | "typing" | "four" | "pairs" | "cards" | "reaction";
 interface CardGame { order: string[]; hands: Record<string, number[]>; pile: number[]; stood: string[] }
-interface TableGame { turn: string; board: string[]; deck: number[]; found: string[]; open: number[]; latest: number; line: number[]; cards?: CardGame }
-const isTableMode = (mode?: GameMode) => mode === "four" || mode === "pairs" || mode === "cards";
+interface TableGame { turn: string; board: string[]; deck: number[]; found: string[]; open: number[]; latest: number; line: number[]; cards?: CardGame; reaction?: ReactionRound }
+interface ReactionRound { signalAt: number; ready: boolean; elapsed: number | null; early: string }
+const isTableMode = (mode?: GameMode) => mode === "four" || mode === "pairs" || mode === "cards" || mode === "reaction";
 const tableLimit = (mode?: GameMode) => mode === "cards" ? 4 : 2;
 function handTotal(hand: number[]) {
   let total = 0, aces = 0;
@@ -158,7 +159,7 @@ function stripSecrets(game: Game, me: Player) {
   } : null;
   return {
     type: "state", room: "", me: me.id, mode: game.mode ?? "sapper", sea: publicSea, typing: publicTyping, table: game.table ? {
-      turn: game.table.turn, hand: game.table.cards?.hands[me.id] ?? [],
+      turn: game.table.turn, reaction: game.table.reaction ? { ready: game.table.reaction.ready, elapsed: game.table.reaction.elapsed, early: game.table.reaction.early } : null, hand: game.table.cards?.hands[me.id] ?? [],
       totals: game.table.cards ? Object.fromEntries(Object.entries(game.table.cards.hands).filter(([id]) => game.over || id === me.id).map(([id, hand]) => [id, handTotal(hand)])) : {},
       stood: game.table.cards?.stood ?? [],
       counts: game.table.cards ? Object.fromEntries(Object.entries(game.table.cards.hands).map(([id, hand]) => [id, hand.length])) : {}, board: game.table.board, found: game.table.found, latest: game.table.latest, line: game.table.line,
@@ -229,6 +230,7 @@ export class GameRoom extends DurableObject<Env> {
       await this.ctx.storage.put("roomCode", this.roomCode);
       if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1, this.game.drawing.endsAt));
       else if (this.game?.mode === "typing" && this.game.phase === "playing" && this.game.typing) await this.ctx.storage.setAlarm(this.game.typing.endsAt);
+      else if (this.game?.phase === "playing" && this.game.table?.reaction && !this.game.table.reaction.ready) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1, this.game.table.reaction.signalAt));
       else await this.ctx.storage.deleteAlarm();
       const pair = new WebSocketPair();
       const client = pair[0], server = pair[1];
@@ -487,6 +489,11 @@ export class GameRoom extends DurableObject<Env> {
       }
       game.table = { turn: online[0].id, board: game.mode === "four" ? Array(42).fill("") : [], deck,
         found: Array(deck.length).fill(""), open: [], latest: -1, line: [] };
+      if (game.mode === "reaction") {
+        const signalAt = Date.now() + 1800 + crypto.getRandomValues(new Uint32Array(1))[0] % 2800;
+        game.table.reaction = { signalAt, ready: false, elapsed: null, early: "" };
+        await this.ctx.storage.setAlarm(signalAt);
+      }
       if (game.mode === "cards") {
         const pile = shuffle(Array.from({ length: 52 }, (_, i) => i));
         const order = online.map(player => player.id);
@@ -498,6 +505,23 @@ export class GameRoom extends DurableObject<Env> {
       return;
     }
     const table = game.table;
+    if (game.mode === "reaction") {
+      const reaction = table?.reaction;
+      if (packet.type !== "reactionPress" || game.phase !== "playing" || !reaction || online.length !== 2) return;
+      const now = Date.now();
+      if (reaction.ready) {
+        reaction.elapsed = now - reaction.signalAt;
+        game.winnerId = id;
+      } else {
+        reaction.early = id;
+        game.winnerId = online.find(player => player.id !== id)!.id;
+      }
+      game.over = true;
+      game.phase = "over";
+      await this.ctx.storage.deleteAlarm();
+      await this.publish();
+      return;
+    }
     if (game.mode === "cards" && game.phase === "playing" && table?.turn === id && table.cards) {
       const cards = table.cards;
       if (online.length !== cards.order.length) return;
@@ -601,7 +625,7 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async join(socket: WebSocket, packet: Record<string, unknown>) {
-    const requestedMode: GameMode = packet.mode === "draw" || packet.mode === "sea" || packet.mode === "typing" || packet.mode === "four" || packet.mode === "pairs" || packet.mode === "cards" ? packet.mode : "sapper";
+    const requestedMode: GameMode = packet.mode === "draw" || packet.mode === "sea" || packet.mode === "typing" || packet.mode === "four" || packet.mode === "pairs" || packet.mode === "cards" || packet.mode === "reaction" ? packet.mode : "sapper";
     if (!this.game && packet.create !== true) {
       socket.send(JSON.stringify({ type: "error", message: "Комната не найдена. Проверь код или создай новую." }));
       socket.close(1008, "room not found");
@@ -691,6 +715,11 @@ export class GameRoom extends DurableObject<Env> {
       if (!this.ctx.getWebSockets().some(ws => ws.readyState === WebSocket.OPEN)) { this.game = null; await this.ctx.storage.deleteAll(); return; }
       if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) {
         if (!(await this.advanceDrawDeadline())) await this.ctx.storage.setAlarm(this.game.drawing.endsAt);
+      }
+      if (this.game?.phase === "playing" && this.game.table?.reaction && !this.game.table.reaction.ready) {
+        this.game.table.reaction.ready = true;
+        this.game.table.reaction.signalAt = Date.now();
+        await this.publish();
       }
       if (this.game?.mode === "typing" && this.game.phase === "playing" && this.game.typing) {
         if (Date.now() >= this.game.typing.endsAt) await this.finishTyping();
