@@ -61,7 +61,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     $("hero-eyebrow").textContent = drawing ? "СЛОВО ЗАДАНО. ТВОЯ ОЧЕРЕДЬ РИСОВАТЬ." : "ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.";
     $("hero-title").innerHTML = drawing ? "Рисуй и<br><em>угадывай</em>" : "<em>Сапёр</em>";
     $("hero-description").textContent = drawing ? "Рисуй загаданное слово, пока друзья угадывают. Очки получают самые быстрые догадчики." : "Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.";
-    $("hero-rules").innerHTML = drawing ? "" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
+    $("hero-rules").innerHTML = drawing ? "" : "<span><b>⚑</b> личные флажки</span><span><b>✦</b> классика на выбывание</span>";
     $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
     $("solo-start").textContent = drawing ? "Попробовать одному →" : "Сыграть с ботом →";
     if (isTableMode(selectedMode)) $("solo-start").textContent = "Попробовать одному →";
