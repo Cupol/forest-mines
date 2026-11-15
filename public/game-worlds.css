@@ -109,3 +109,101 @@ body[data-game="reaction"] .button{border-radius:999px}
   body[data-game] .intro h1{font-size:clamp(34px,10vw,60px)}
   body[data-game="typing"] .intro h1{font-size:clamp(23px,7vw,42px)}
 }
+/* Keep artwork within its own track and give the entry actions priority. */
+body[data-game] .landing {
+  --layout-gap: clamp(16px, 2.4vw, 28px);
+  padding: clamp(22px, 3vw, 40px) clamp(0px, 2vw, 22px) 24px;
+}
+body[data-game] .landing .intro { width: 100%; max-width: none; min-width: 0; }
+body[data-game] .landing h1 {
+  margin: 12px 0 15px;
+  font-size: clamp(38px, 5.15vw, 72px);
+  line-height: 1.05;
+  text-wrap: balance;
+  overflow-wrap: normal;
+}
+body[data-game] .landing .intro > p {
+  margin: 0;
+  max-width: 49ch;
+  font-size: clamp(14px, 1.3vw, 16px);
+  line-height: 1.55;
+}
+body[data-game] .landing .rules-strip { margin-top: 16px; gap: 9px; }
+body[data-game] .game-switch { margin: 0 0 15px; }
+body[data-game] .landing .lobby { width: 100%; padding: clamp(16px, 2vw, 24px); }
+body[data-game] .lobby .card-heading { margin-bottom: 11px; }
+body[data-game] .lobby .divider { margin-block: 13px; }
+body[data-game] .lobby #solo-start {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 39px;
+  margin: 12px 0 0;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-weight: 600;
+  text-align: left;
+}
+body[data-game] .lobby #solo-start:hover { border-color: var(--gold); }
+body[data-game] .lobby-error:empty { display: none; }
+body[data-game] .join-line { grid-template-columns: minmax(0, 1fr) auto; }
+body[data-game] .join-line input { min-width: 0; }
+body[data-game] .game-gallery h2 { margin-bottom: 8px; }
+body[data-game] .game-gallery .gallery-card { min-height: 50px; line-height: 1.2; }
+body[data-game] .game-gallery .gallery-icon { font-size: 19px; }
+body[data-game] .bottom-note { margin-top: 0; }
+body[data-game="sapper"] .landing .lobby #solo-start { border-radius: 0; }
+body[data-game="draw"] .game-art { align-self: center; min-height: clamp(245px, 33vw, 420px); }
+body[data-game="draw"] .landing h1 { font-size: clamp(35px, 4.9vw, 70px); }
+body[data-game="sea"] .landing .intro { padding-bottom: 12px; }
+body[data-game="sea"] .game-art { align-self: center; width: min(100%, 250px); min-height: 0; }
+body[data-game="typing"] .landing .intro { box-shadow: 5px 5px #8a5f44; }
+body[data-game="typing"] .landing .intro h1 { font-size: clamp(27px, 4.1vw, 56px); }
+body[data-game="typing"] .intro #game-index { color: #594234; }
+body[data-game="typing"] .game-art { max-width: 540px; }
+body[data-game="four"] .game-art { padding-block: 8px; font-size: clamp(17px, 2.5vw, 32px); }
+body[data-game="pairs"] .game-art { align-self: center; height: 310px; min-height: 0; }
+body[data-game="pairs"] .game-art span { width: min(37%, 115px); }
+body[data-game="cards"] .game-art {
+  align-self: start;
+  height: clamp(250px, 27vw, 345px);
+  min-height: 0;
+  aspect-ratio: auto;
+}
+body[data-game="cards"] .game-art span { width: clamp(66px, 13vw, 138px); }
+body[data-game="reaction"] .game-art { align-self: center; width: min(100%, 350px); min-height: 0; }
+body[data-game="reaction"] .lobby #solo-start { border-radius: 999px; }
+@media (min-width: 621px) {
+  body[data-game="typing"] .landing {
+    grid-template: "intro lobby" auto "art lobby" auto "catalog catalog" auto "footer footer" auto / minmax(0, 1.15fr) minmax(235px, .85fr);
+  }
+  body[data-game="four"] .landing {
+    grid-template: "intro intro" auto "art lobby" auto "catalog catalog" auto "footer footer" auto / minmax(0, 1fr) minmax(245px, .9fr);
+  }
+  body[data-game="four"] .game-art { align-self: center; }
+}
+@media (max-width: 620px) {
+  body[data-game] .landing {
+    --layout-gap: 16px;
+    padding-top: 16px;
+    grid-template: "intro" "lobby" "art" "catalog" "footer" / minmax(0, 1fr);
+  }
+  body[data-game] .landing h1 { font-size: clamp(33px, 10vw, 48px); }
+  body[data-game] .landing .lobby { max-width: 100%; }
+  body[data-game="draw"] .game-art { min-height: 125px; max-height: 140px; }
+  body[data-game="pairs"] .game-art,
+  body[data-game="cards"] .game-art { height: 145px; min-height: 0; }
+  body[data-game="sea"] .game-art,
+  body[data-game="reaction"] .game-art { width: 140px; }
+  body[data-game] #game-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  body[data-game] .game-gallery .gallery-card { display: flex; align-items: center; gap: 7px; min-height: 45px; }
+  body[data-game] .game-gallery .gallery-icon { margin: 0; }
+  body[data-game] .game-head { flex-wrap: wrap; gap: 10px; }
+  body[data-game] .game-head .game-title { min-width: 0; }
+}
+@media (min-width: 621px) {
+  body[data-game]:not([data-game="sapper"]):not([data-game="pairs"]) #game-gallery {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
