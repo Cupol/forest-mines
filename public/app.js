@@ -252,6 +252,17 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       cell.open = true; cell.by = player.name;
       if (cell.mine) {
         cell.boom = true; player.explosions = (player.explosions || 0) + 1;
+        if (solo && game.mode === "sapper" && playerId === myId) {
+          clearTimeout(botTimer);
+          game.over = true;
+          game.phase = "over";
+          game.mineLoss = true;
+          game.winnerId = game.players.find(other => other.id !== myId)?.id ?? "";
+          setStatus("Мина взорвалась. Партия окончена.", "hit");
+          draw();
+          showWinner();
+          return;
+        }
         if (playerId === myId) setStatus("Мина взорвалась! −3 очка. Игроки продолжают искать.", "hit");
       } else {
         game.safe++;
@@ -282,6 +293,12 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   }
   function showWinner() {
     if (!game?.over || winnerDismissed) return;
+    if (game.mineLoss) {
+      ui.winnerTitle.textContent = "Ты подорвался!";
+      ui.winnerMessage.textContent = "Ты открыл мину и проиграл партию.";
+      ui.winnerOverlay.classList.remove("hidden");
+      return;
+    }
     const winner = game.players.find(player => player.id === game.winnerId) || [...game.players].sort((a, b) => b.score - a.score || b.flags.filter(i => game.cells[i]?.mine).length - a.flags.filter(i => game.cells[i]?.mine).length || (a.explosions || 0) - (b.explosions || 0) || a.id.localeCompare(b.id))[0];
     const exact = game.players.filter(player => player.score === winner.score && player.flags.filter(i => game.cells[i]?.mine).length === winner.flags.filter(i => game.cells[i]?.mine).length && (player.explosions || 0) === (winner.explosions || 0)).length > 1;
     ui.winnerTitle.textContent = `Победитель — ${winner.name}!`;
