@@ -11,7 +11,28 @@ interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number }
 import { TYPING_TEXTS } from "../../public/typing-texts.js";
 
-type GameMode = "sapper" | "draw" | "sea" | "typing";
+type GameMode = "sapper" | "draw" | "sea" | "typing" | "four" | "pairs" | "cards";
+interface CardGame { order: string[]; hands: Record<string, number[]>; pile: number[]; stood: string[] }
+interface TableGame { turn: string; board: string[]; deck: number[]; found: string[]; open: number[]; latest: number; line: number[]; cards?: CardGame }
+const isTableMode = (mode?: GameMode) => mode === "four" || mode === "pairs" || mode === "cards";
+const tableLimit = (mode?: GameMode) => mode === "cards" ? 4 : 2;
+function handTotal(hand: number[]) {
+  let total = 0, aces = 0;
+  for (const card of hand) {
+    const rank = card % 13;
+    if (rank === 0) aces++;
+    total += Math.min(10, rank + 1);
+  }
+  if (aces && total + 10 <= 21) total += 10;
+  return total;
+}
+function shuffle<T>(items: T[]) {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items;
+}
 
 interface TypingEntry { value: string; attempts: number; errors: number; finishedAt: number }
 interface TypingRace {
@@ -53,7 +74,7 @@ interface Player { id: string; token: string; name: string; score: number; explo
 interface Stroke { color: string; size: number; tool?: "pen" | "line" | "eraser"; opacity?: number; points: { x: number; y: number }[] }
 interface ChatLine { id: string; kind: "chat" | "system"; name: string; text: string; at: number }
 interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; stage: "choosing" | "drawing"; choices: string[]; offeredWords?: string[]; revealedIndices: number[]; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
-interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; typing?: TypingRace; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
+interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; table?: TableGame; typing?: TypingRace; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
 function normalizeWord(value: unknown): string { return String(value ?? "").toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, ""); }
@@ -136,7 +157,13 @@ function stripSecrets(game: Game, me: Player) {
     startedAt: drawing.startedAt, endsAt: drawing.endsAt, strokes: drawing.strokes, guessedPlayers: drawing.guessedPlayers,
   } : null;
   return {
-    type: "state", room: "", me: me.id, mode: game.mode ?? "sapper", sea: publicSea, typing: publicTyping,
+    type: "state", room: "", me: me.id, mode: game.mode ?? "sapper", sea: publicSea, typing: publicTyping, table: game.table ? {
+      turn: game.table.turn, hand: game.table.cards?.hands[me.id] ?? [],
+      totals: game.table.cards ? Object.fromEntries(Object.entries(game.table.cards.hands).filter(([id]) => game.over || id === me.id).map(([id, hand]) => [id, handTotal(hand)])) : {},
+      stood: game.table.cards?.stood ?? [],
+      counts: game.table.cards ? Object.fromEntries(Object.entries(game.table.cards.hands).map(([id, hand]) => [id, hand.length])) : {}, board: game.table.board, found: game.table.found, latest: game.table.latest, line: game.table.line,
+      cards: game.table.deck.map((value, index) => game.table!.open.includes(index) || game.table!.found[index] ? value : null)
+    } : null,
     cells: game.cells.map(c => c.open || game.over ? { open: true, mine: c.mine, near: c.near, boom: c.boom, by: c.by } : { open: false }),
     players: game.players.map(({ id, name, score, explosions, color, flags, online }) => ({ id, name, score: game.mode === "draw" || game.over ? score : 0, explosions, color, flags, online })),
     drawing: publicDrawing, chat: game.chat ?? [], config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, winnerId: game.winnerId ?? "", event: game.event,
@@ -221,6 +248,7 @@ export class GameRoom extends DurableObject<Env> {
       if (packet.type === "join") { await this.join(socket, packet); return; }
       if (!this.game) return;
       if (!attachment?.id || !this.game.players.some(p => p.id === attachment.id)) return;
+      if (isTableMode(this.game.mode)) { await this.handleTablePacket(attachment.id, packet); return; }
       if (this.game.mode === "sea") { await this.handleSeaPacket(attachment.id, packet); return; }
       if (this.game.mode === "typing") { await this.handleTypingPacket(attachment.id, packet); return; }
       if (packet.type === "start") {
@@ -446,6 +474,97 @@ export class GameRoom extends DurableObject<Env> {
     else await this.publish();
   }
 
+  private async handleTablePacket(id: string, packet: Record<string, unknown>) {
+    const game = this.game!;
+    const online = game.players.filter(player => player.online);
+    if (packet.type === "tableStart" && game.phase === "lobby" && id === game.hostId && online.length >= 2 && online.length <= tableLimit(game.mode)) {
+      game.players = online;
+      const pairs = game.mode === "pairs";
+      const deck = pairs ? Array.from({ length: 16 }, (_, i) => i % 8) : [];
+      for (let i = deck.length - 1; i > 0; i--) {
+        const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+      }
+      game.table = { turn: online[0].id, board: game.mode === "four" ? Array(42).fill("") : [], deck,
+        found: Array(deck.length).fill(""), open: [], latest: -1, line: [] };
+      if (game.mode === "cards") {
+        const pile = shuffle(Array.from({ length: 52 }, (_, i) => i));
+        const order = online.map(player => player.id);
+        const hands = Object.fromEntries(order.map(playerId => [playerId, pile.splice(0, 2)]));
+        game.table.cards = { pile, order, hands, stood: [] };
+      }
+      game.phase = "playing";
+      await this.publish();
+      return;
+    }
+    const table = game.table;
+    if (game.mode === "cards" && game.phase === "playing" && table?.turn === id && table.cards) {
+      const cards = table.cards;
+      if (online.length !== cards.order.length) return;
+      const hand = cards.hands[id];
+      if (packet.type === "tableDraw" && cards.pile.length) hand.push(cards.pile.pop()!);
+      else if (packet.type !== "tableStand") return;
+      if (packet.type === "tableStand" || handTotal(hand) >= 21 || !cards.pile.length) {
+        cards.stood.push(id);
+        const remaining = cards.order.filter(playerId => !cards.stood.includes(playerId));
+        if (remaining.length) table.turn = remaining[0];
+        else {
+          const ranked = cards.order.map(playerId => ({ id: playerId, total: handTotal(cards.hands[playerId]) }))
+            .filter(player => player.total <= 21).sort((a, b) => b.total - a.total);
+          game.winnerId = ranked[0] && ranked[0].total !== ranked[1]?.total ? ranked[0].id : "";
+          game.phase = "over"; game.over = true;
+        }
+      }
+      await this.publish();
+      return;
+    }
+    if (packet.type !== "tableMove" || game.phase !== "playing" || !table || table.turn !== id || online.length !== 2) return;
+    const other = online.find(player => player.id !== id)!;
+    const index = packet.index;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) return;
+    let finished = false;
+    if (game.mode === "four") {
+      if (index >= 7 || table.board[index]) return;
+      let row = 5;
+      while (table.board[row * 7 + index]) row--;
+      table.latest = row * 7 + index;
+      table.board[table.latest] = id;
+      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+        const line = [table.latest];
+        for (const direction of [-1, 1]) {
+          for (let step = 1; step < 4; step++) {
+            const x = index + dx * step * direction, y = row + dy * step * direction;
+            if (x < 0 || x > 6 || y < 0 || y > 5 || table.board[y * 7 + x] !== id) break;
+            line.push(y * 7 + x);
+          }
+        }
+        if (line.length >= 4) { table.line = line; game.winnerId = id; break; }
+      }
+      finished = Boolean(game.winnerId) || table.board.every(Boolean);
+      table.turn = other.id;
+    } else {
+      if (index >= table.deck.length || table.found[index]) return;
+      if (table.open.length === 2) table.open = [];
+      if (table.open.includes(index)) return;
+      table.open.push(index);
+      table.latest = index;
+      if (table.open.length === 2) {
+        const [a, b] = table.open;
+        if (table.deck[a] === table.deck[b]) {
+          table.found[a] = table.found[b] = id;
+          table.open = [];
+          finished = table.found.every(Boolean);
+          if (finished) {
+            const count = table.found.filter(owner => owner === id).length;
+            game.winnerId = count === 8 ? "" : count > 8 ? id : other.id;
+          }
+        } else table.turn = other.id;
+      }
+    }
+    if (finished) { game.phase = "over"; game.over = true; }
+    await this.publish();
+  }
+
   private async handleSeaPacket(playerId: string, packet: Record<string, unknown>) {
     const game = this.game;
     if (!game || game.over) return;
@@ -482,7 +601,7 @@ export class GameRoom extends DurableObject<Env> {
   }
 
   private async join(socket: WebSocket, packet: Record<string, unknown>) {
-    const requestedMode: GameMode = packet.mode === "draw" || packet.mode === "sea" || packet.mode === "typing" ? packet.mode : "sapper";
+    const requestedMode: GameMode = packet.mode === "draw" || packet.mode === "sea" || packet.mode === "typing" || packet.mode === "four" || packet.mode === "pairs" || packet.mode === "cards" ? packet.mode : "sapper";
     if (!this.game && packet.create !== true) {
       socket.send(JSON.stringify({ type: "error", message: "Комната не найдена. Проверь код или создай новую." }));
       socket.close(1008, "room not found");
@@ -497,8 +616,11 @@ export class GameRoom extends DurableObject<Env> {
     const token = /^[\w-]{16,100}$/.test(String(packet.token ?? "")) ? String(packet.token) : "";
     const name = safeName(packet.name);
     let player = this.game.players.find(p => p.id === id);
+    if (isTableMode(requestedMode) && this.game.phase === "lobby" && !player) {
+      this.game.players = this.game.players.filter(p => p.online);
+    }
     if (!player) {
-      if (requestedMode === "sea" && this.game.players.length >= 2) {
+      if ((requestedMode === "sea" && this.game.players.length >= 2) || (isTableMode(requestedMode) && this.game.players.filter(p => p.online).length >= tableLimit(requestedMode))) {
         socket.send(JSON.stringify({ type: "error", message: "В этой комнате уже два игрока." }));
         socket.close(1008, "room full"); return;
       }
@@ -510,6 +632,10 @@ export class GameRoom extends DurableObject<Env> {
       if (!this.game.hostId || !this.game.players.some(p => p.id === this.game!.hostId && p.online)) this.game.hostId = id;
       this.game.event = { kind: "joined", name, id };
     } else {
+      if (isTableMode(requestedMode) && !player.online && this.game.players.filter(p => p.online).length >= tableLimit(requestedMode)) {
+        socket.send(JSON.stringify({ type: "error", message: "В комнате уже максимум игроков." }));
+        socket.close(1008, "room full"); return;
+      }
       if (!token || token !== player.token) { socket.send(JSON.stringify({ type: "error", message: "Не удалось подтвердить участника комнаты. Создай новую комнату или проверь ссылку." })); socket.close(1008, "invalid player token"); return; }
       player.name = name; player.online = true; player.flags ??= []; player.explosions ??= 0; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (this.game.mode !== "draw" && !this.game.over) player.score = 0;
     }

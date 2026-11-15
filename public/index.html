@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#101817">
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
-  <link rel="stylesheet" href="style.css?v=practice-fleet-1">
+  <link rel="stylesheet" href="style.css?v=table-club-1">
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=practice-fleet-1"></script>
+  <script type="module" src="app.js?v=table-club-1"></script>
 </head>
 <body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -36,6 +36,7 @@
         <button id="solo-start" class="text-button">Сыграть с ботом <span>→</span></button>
         <p class="lobby-error" id="lobby-error" role="alert"></p>
       </section>
+      <section class="game-gallery" aria-label="Каталог игр"><img class="gallery-art" src="game-table.jpg" alt="" loading="lazy" decoding="async"><h2>Все игры</h2><div id="game-gallery"></div></section>
       <div class="bottom-note"><span>ИГРАЙТЕ ВМЕСТЕ</span><span>КОМНАТА ПО ССЫЛКЕ</span><span id="landing-cap">ДО 20 ИГРОКОВ</span></div>
     </section>
 
@@ -80,6 +81,13 @@
           <div id="draw-guest-waiting" class="guest-waiting hidden"><span class="eyebrow">ЛОББИ · ЖДЁМ ХУДОЖНИКА</span><h3>Скоро начнём</h3><p>Ты в комнате. Ведущий запустит игру, когда все будут готовы.</p></div>
         </div>
         <aside class="room-roster card"><div class="panel-title"><span>УЖЕ В КОМНАТЕ</span><span id="draw-lobby-player-count">1 / 20</span></div><ol id="draw-lobby-players" class="players-list"></ol><div class="setup-share"><span>КОД ДРУЗЬЯМ</span><strong id="draw-lobby-code">------</strong></div></aside>
+      </section>
+      <section id="table-dashboard" class="card table-panel hidden">
+        <p id="table-status" role="status"></p>
+        <button id="table-start" class="button button-primary" type="button">Начать игру</button>
+        <div id="table-scores" class="table-scores"></div>
+        <p id="table-card-status"></p><button id="table-draw-card" class="button hidden" type="button">Взять карту</button> <button id="table-stand" class="button hidden" type="button">Остановиться</button>
+        <div id="table-board" class="table-board"></div>
       </section>
       <section id="typing-dashboard" class="card typing-panel hidden">
         <p id="typing-status" role="status"></p>

@@ -131,3 +131,41 @@ body[data-game] .toast{background:var(--panel2);border-color:var(--line);color:v
   body[data-game],body[data-game] .card,.game-switch .icon-button,.landing .intro>:not(.game-switch),.landing .lobby,.landing .bottom-note{transition:none!important}
   .landing.game-switching .intro>:not(.game-switch),.landing.game-switching .lobby,.landing.game-switching .bottom-note{opacity:1;transform:none;filter:none}
 }
+.game-gallery{grid-column:1/-1;min-width:0;padding-top:12px}
+.game-gallery h2{font:500 24px var(--serif);margin:0 0 12px}
+#game-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:9px}
+.gallery-card{min-height:76px;padding:10px;text-align:left;color:#f8f5ef;background:#101722;border:1px solid #394253;border-radius:12px;font:600 12px var(--sans);cursor:pointer;transition:transform .2s,border-color .2s,background .2s}
+.gallery-card:hover,.gallery-card:focus-visible{transform:translateY(-3px);border-color:var(--tile)}
+.gallery-card[aria-pressed="true"]{border-color:var(--tile);background:color-mix(in srgb,#101722 78%,var(--tile))}
+.gallery-icon{display:block;color:var(--tile);font-size:25px;margin-bottom:4px}
+.gallery-art{display:block;width:100%;height:clamp(130px,24vw,255px);object-fit:cover;object-position:50% 54%;border:1px solid var(--line);border-radius:16px;margin-bottom:18px}
+body[data-game="four"]{background:#291614;--gold:#ffb57e;--green:#ffb57e;--line:#704c42}
+body[data-game="pairs"]{background:#18142d;--gold:#c0b6ff;--green:#c0b6ff;--line:#514e76}
+body[data-game="cards"]{background:#09291f;--gold:#99e1b9;--green:#99e1b9;--line:#38765e}
+body[data-game="four"] .card{background:linear-gradient(135deg,#42251b,#211716)}
+body[data-game="pairs"] .card{background:linear-gradient(135deg,#332650,#1a192d)}
+body[data-game="cards"] .card{background:radial-gradient(ellipse at top,#1d5e44,#0c3227 62%,#0b251e);border-radius:24px}
+.table-panel{margin-top:16px;padding:clamp(16px,4vw,36px)}
+.table-scores{display:flex;flex-wrap:wrap;gap:12px;margin:14px 0}
+.table-scores span{border:1px solid currentColor;padding:5px 12px;border-radius:20px}
+.table-player-a{color:#ffcd6c}.table-player-b{color:#ff9ba1}
+.table-board{display:grid;gap:clamp(4px,1.3vw,10px);max-width:520px}
+.table-four{grid-template-columns:repeat(7,1fr);background:#361f19;padding:12px;border-radius:20px;border:1px solid #8b5941}
+.table-pairs{grid-template-columns:repeat(4,1fr);max-width:420px}
+.table-cell{min-width:0;aspect-ratio:1;color:#d9d2ff;background:#242236;border:1px solid #645780;border-radius:10px;font-size:clamp(18px,5vw,38px)}
+.table-cell:enabled{cursor:pointer}.table-cell:enabled:hover{border-color:#f8e8fb;filter:brightness(1.22)}
+.table-four .table-cell{border-radius:50%;background:#201311;border-color:#795442}
+.table-four .table-player-a{background:radial-gradient(circle at 34% 28%,#ffe195,#ec9c29 76%);border-color:#ffde94}
+.table-four .table-player-b{background:radial-gradient(circle at 34% 28%,#ffa8b0,#bc4151 76%);border-color:#ffadad}
+.table-face{background:#39305d}.table-found{background:#25473f;border-color:#70c2a3}
+.table-line{outline:3px solid #fff8d3;outline-offset:1px;z-index:1}
+.twenty-one-hand{display:flex;flex-wrap:wrap;margin-top:14px;max-width:none}
+.playing-card{display:grid;place-items:center;min-width:64px;aspect-ratio:2/3;padding:8px;color:#192522;background:#fff9e9;border:2px solid #a8cbad;box-shadow:0 6px 10px #070c0a80;border-radius:10px;font:700 26px var(--serif);animation:table-drop .28s ease-out}
+.playing-card.red{color:#9e292e}
+.table-four .table-latest{animation:table-drop .28s cubic-bezier(.2,.75,.35,1.2)}
+.table-pairs .table-latest{animation:table-flip .25s ease-out}
+.table-won{animation:table-win .8s ease-out}
+@keyframes table-drop{from{transform:translateY(-30%);opacity:.45}to{transform:none;opacity:1}}
+@keyframes table-flip{from{transform:perspective(400px) rotateY(75deg)}to{transform:none}}
+@keyframes table-win{50%{filter:drop-shadow(0 0 15px #e7b96b)}}
+@media(prefers-reduced-motion:reduce){.table-latest,.table-won,.playing-card{animation:none!important}.gallery-card{transition:none}.gallery-card:hover{transform:none}}

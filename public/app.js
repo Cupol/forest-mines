@@ -21,7 +21,17 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   if (rememberedName) ui.name.value = rememberedName;
   const savedRoom = new URLSearchParams(location.search).get("room");
   const savedMode = new URLSearchParams(location.search).get("game");
-  const modes = ["sapper", "draw", "sea", "typing"];
+  const catalog = {
+    sapper: { name: "Сапёр", icon: "🚩", hue: "#84b495" },
+    draw: { name: "Рисуй и угадывай", icon: "🎨", hue: "#c39cf0" },
+    sea: { name: "Морской бой", icon: "⚓", hue: "#8ad9e9" },
+    typing: { name: "Кто быстрее напишет?", icon: "⌨", hue: "#ffc486" },
+    four: { name: "Четыре в ряд", icon: "🟡", hue: "#ffbb77", description: "По очереди бросайте фишки в столбцы. Собери четыре своих фишки по горизонтали, вертикали или диагонали." },
+    pairs: { name: "Найди пару", icon: "✦", hue: "#aeb1ff", description: "Переворачивай по две карточки. Найдёшь пару — получишь очко и ещё один ход. Выиграет тот, кто соберёт больше пар." },
+    cards: { name: "21", icon: "🂡", hue: "#7cdbad", description: "Бери карты или остановись. Выигрывает тот, кто ближе к 21 без перебора. Туз считается за 1 или 11." }
+  };
+  const modes = Object.keys(catalog);
+  const isTableMode = mode => mode === "four" || mode === "pairs" || mode === "cards";
   let selectedMode = modes.includes(savedMode) ? savedMode : "sapper";
   if (savedRoom) ui.roomInput.value = savedRoom.toUpperCase().slice(0, 6);
 
@@ -40,6 +50,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     $("hero-rules").innerHTML = drawing ? "<span><b>✎</b> рисуй по очереди</span><span><b>⌛</b> угадай за минуту</span><span><b>★</b> очки за скорость</span>" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
     $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
     $("solo-start").textContent = drawing ? "Попробовать одному →" : "Сыграть с ботом →";
+    $("solo-start").classList.toggle("hidden", isTableMode(selectedMode));
     if (selectedMode === "sea") {
       document.title = "Морской бой — Круг друзей";
       $("hero-eyebrow").textContent = "ДУЭЛЬ НА ВОДЕ";
@@ -56,6 +67,16 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       $("hero-description").textContent = "У всех одинаковый текст. Печатай быстро и точно, чтобы пройти в следующий раунд.";
       $("hero-rules").innerHTML = "<span>Русские тексты и скороговорки</span><span>Раунды на выбывание</span>";
     }
+    if (isTableMode(selectedMode)) {
+      const details = catalog[selectedMode];
+      document.title = details.name + " — Круг друзей";
+      $("hero-eyebrow").textContent = selectedMode === "cards" ? "КАРТОЧНЫЙ СТОЛ" : "ИГРА НА ДВОИХ";
+      $("hero-title").textContent = details.name;
+      $("hero-description").textContent = details.description;
+      $("hero-rules").replaceChildren();
+      $("landing-cap").textContent = selectedMode === "cards" ? "2–4 ИГРОКА" : "2 ИГРОКА";
+    }
+    for (const card of $("game-gallery").children) card.setAttribute("aria-pressed", String(card.dataset.mode === selectedMode));
   }
   let switchingGame = false;
   async function changeGame(direction) {
@@ -171,6 +192,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
         selectedMode = modes.includes(message.mode) ? message.mode : "sapper";
         game = { mode: selectedMode, cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "", drawing: message.drawing, chat: message.chat || [] };
         game.sea = message.sea;
+        game.table = message.table;
         game.typing = message.typing;
         roomId = message.room || roomId;
         if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${roomId}`, myToken); }
@@ -556,8 +578,10 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
 
   function draw() {
     if (!game) return;
+    $("table-dashboard").classList.toggle("hidden", !isTableMode(game.mode));
     $("sea-dashboard").classList.toggle("hidden", game.mode !== "sea");
     $("typing-dashboard").classList.toggle("hidden", game.mode !== "typing");
+    if (isTableMode(game.mode)) { drawTable(); return; }
     if (game.mode === "typing") { drawTyping(); return; }
     if (game.mode === "sea") { drawSea(); return; }
     if (game.mode === "draw") { drawDrawingGame(); return; }
@@ -972,6 +996,90 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   $("leave-room").addEventListener("click", () => teardown());
   $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}&game=${selectedMode}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });
   ui.flagMode.addEventListener("click", () => { flagMode = !flagMode; ui.flagMode.setAttribute("aria-pressed", String(flagMode)); setStatus(flagMode ? "Режим флажка: коснись клетки, которую хочешь проверить." : "Режим проверки клетки."); });
+  const cardFaces = ["☀️", "🌙", "⭐", "🍒", "🍀", "💎", "🦋", "🍄"];
+  function sendTable(type, index) {
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, index }));
+  }
+  function drawTable() {
+    for (const panel of [ui.roomSetup, ui.dashboard, ui.drawLobby, ui.drawDashboard]) panel.classList.add("hidden");
+    const state = game.table, pairs = game.mode === "pairs", cards = game.mode === "cards";
+    const online = game.players.filter(player => player.online);
+    const canMove = game.phase === "playing" && state?.turn === myId && online.length === game.players.length;
+    const board = $("table-board"), start = $("table-start");
+    const winner = game.players.find(player => player.id === game.winnerId);
+    ui.heading.textContent = catalog[game.mode].name;
+    ui.copyLink.disabled = game.phase !== "lobby";
+    ui.copyLink.textContent = "Пригласить ↗";
+    ui.phaseHint.textContent = cards ? "ЦЕЛЬ — 21 БЕЗ ПЕРЕБОРА" : pairs ? "СОБЕРИ БОЛЬШЕ ПАР" : "СОБЕРИ ЧЕТЫРЕ ФИШКИ В РЯД";
+    start.classList.toggle("hidden", game.phase !== "lobby" || game.hostId !== myId);
+    start.disabled = online.length < 2;
+    $("table-status").textContent = game.over ? winner ? "Победитель — " + winner.name + "!" : "Ничья!" :
+      online.length < 2 || (state && online.length < game.players.length) ? "Ждём игроков." : !state ? "Ведущий может начать игру." :
+      canMove ? pairs && state.cards.filter((value, i) => value !== null && !state.found[i]).length === 1 ?
+        "Открой вторую карточку." : "Твой ход." : "Ход соперника.";
+    const scores = $("table-scores");
+    scores.replaceChildren();
+    game.players.forEach((player, index) => {
+      const label = document.createElement("span");
+      label.className = index === 0 ? "table-player-a" : "table-player-b";
+      label.textContent = player.name + (pairs && state ? " · " + state.found.filter(id => id === player.id).length / 2 : "") + (cards && state ? " · " + (game.over ? state.totals[player.id] + " очк." : state.counts[player.id] + " карт" + (state.stood.includes(player.id) ? " · закончил" : "")) : "");
+      scores.append(label);
+    });
+    $("table-draw-card").classList.toggle("hidden", !cards || !canMove);
+    $("table-stand").classList.toggle("hidden", !cards || !canMove);
+    $("table-card-status").textContent = cards && state ? "Твои очки: " + state.totals[myId] + (state.totals[myId] > 21 ? " · перебор" : "") : "";
+    board.replaceChildren();
+    if (cards) {
+      board.className = "table-board twenty-one-hand";
+      for (const value of state?.hand ?? []) {
+        const card = document.createElement("span");
+        const rank = ["Т", "2", "3", "4", "5", "6", "7", "8", "9", "10", "В", "Д", "К"][value % 13];
+        const suit = Math.floor(value / 13);
+        card.className = suit % 2 ? "playing-card red" : "playing-card";
+        card.textContent = rank + " " + ["♠", "♥", "♣", "♦"][suit];
+        board.append(card);
+      }
+      return;
+    }
+    board.className = "table-board " + (pairs ? "table-pairs" : "table-four");
+    board.classList.toggle("table-won", game.over && Boolean(winner));
+    if (!state) return;
+    const values = pairs ? state.cards : state.board;
+    values.forEach((value, index) => {
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "table-cell";
+      cell.disabled = !canMove || (pairs ? Boolean(state.found[index]) : Boolean(state.board[index % 7]));
+      if (pairs) {
+        cell.textContent = value === null ? "✦" : cardFaces[value];
+        cell.classList.toggle("table-face", value !== null);
+        cell.classList.toggle("table-found", Boolean(state.found[index]));
+        cell.setAttribute("aria-label", "Карточка " + (index + 1) + (value === null ? ", закрыта" : ", " + cardFaces[value]));
+      } else {
+        cell.classList.toggle("table-player-a", Boolean(value) && value === game.players[0]?.id);
+        cell.classList.toggle("table-player-b", Boolean(value) && value !== game.players[0]?.id);
+        cell.classList.toggle("table-line", state.line.includes(index));
+        cell.setAttribute("aria-label", "Столбец " + (index % 7 + 1) + (value ? ", фишка" : ""));
+      }
+      cell.classList.toggle("table-latest", state.latest === index);
+      cell.addEventListener("click", () => sendTable("tableMove", pairs ? index : index % 7));
+      board.append(cell);
+    });
+  }
+  $("table-stand").addEventListener("click", () => sendTable("tableStand"));
+  $("table-draw-card").addEventListener("click", () => sendTable("tableDraw"));
+  $("table-start").addEventListener("click", () => sendTable("tableStart"));
+  for (const [mode, item] of Object.entries(catalog)) {
+    const card = document.createElement("button"), icon = document.createElement("span");
+    card.type = "button"; card.className = "gallery-card"; card.dataset.mode = mode;
+    card.style.setProperty("--tile", item.hue);
+    icon.className = "gallery-icon"; icon.textContent = item.icon; icon.setAttribute("aria-hidden", "true");
+    card.append(icon, document.createTextNode(item.name));
+    card.addEventListener("click", () => {
+      if (mode !== selectedMode) changeGame(modes.indexOf(mode) - modes.indexOf(selectedMode));
+    });
+    $("game-gallery").append(card);
+  }
   applySelectedMode(); document.querySelector(".draw-colors button[data-color='#17201c']")?.classList.add("selected");
   document.addEventListener("keydown", event => { if (event.key === "Escape" && game) teardown(); });
   window.addEventListener("beforeunload", () => { if (socket) socket.close(); });
