@@ -269,3 +269,23 @@ body[data-game="four"] .game-art { justify-self: start; width: min(100%, 400px);
   body[data-game] .landing h1 { font-size: clamp(28px, 8vw, 42px); }
   body[data-game="typing"] .landing .intro h1 { font-size: clamp(23px, 7vw, 34px); }
 }
+
+.game-feature { display: contents; }
+@media (min-width: 901px) {
+  body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .landing {
+    grid-template-areas: "catalog feature lobby" "footer footer footer";
+    grid-template-rows: auto auto;
+  }
+  body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .game-feature {
+    grid-area: feature;
+    display: grid;
+    align-content: start;
+    gap: clamp(14px, 2vw, 22px);
+    min-width: 0;
+  }
+  body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .game-feature .intro,
+  body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .game-feature .game-art {
+    grid-area: auto;
+    margin-block: 0;
+  }
+}

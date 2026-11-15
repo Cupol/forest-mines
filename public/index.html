@@ -7,7 +7,7 @@
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
   <link rel="stylesheet" href="style.css?v=game-worlds-1">
-  <link rel="stylesheet" href="game-worlds.css?v=3">
+  <link rel="stylesheet" href="game-worlds.css?v=4">
   <script src="config.js"></script>
   <script type="module" src="app.js?v=game-worlds-1"></script>
 </head>
@@ -20,6 +20,7 @@
     </header>
 
     <section class="landing" id="landing">
+      <div class="game-feature">
       <div class="intro">
         <div class="game-switch" aria-label="Переключение игр"><button id="game-prev" class="icon-button" aria-label="Предыдущая игра">←</button><span id="game-index">ИГРА 1 / 2</span><button id="game-next" class="icon-button" aria-label="Следующая игра">→</button></div>
         <span class="eyebrow" id="hero-eyebrow">ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.</span>
@@ -28,6 +29,7 @@
         <div class="rules-strip" id="hero-rules"><span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span></div>
       </div>
       <div id="game-art" class="game-art" aria-hidden="true"></div>
+      </div>
       <section class="lobby card">
         <div class="card-heading"><span class="eyebrow">СОБЕРИ СВОЮ КОМПАНИЮ</span><span class="seal">НАЧНИ ЗДЕСЬ</span></div>
         <label class="field-label" for="player-name">ТВОЁ ИМЯ</label>
