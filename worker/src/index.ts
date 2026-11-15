@@ -72,7 +72,8 @@ interface SeaGame {
 }
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
 interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean }
-interface Stroke { color: string; size: number; tool?: "pen" | "line" | "eraser"; opacity?: number; points: { x: number; y: number }[] }
+const STROKE_TOOLS = ["pen", "line", "eraser", "fill", "square", "circle", "rect", "ellipse"] as const;
+interface Stroke { color: string; size: number; tool?: (typeof STROKE_TOOLS)[number]; opacity?: number; points: { x: number; y: number }[] }
 interface ChatLine { id: string; kind: "chat" | "system"; name: string; text: string; at: number }
 interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; stage: "choosing" | "drawing"; choices: string[]; offeredWords?: string[]; revealedIndices: number[]; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
 interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; table?: TableGame; typing?: TypingRace; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
@@ -388,12 +389,12 @@ export class GameRoom extends DurableObject<Env> {
         if (!input || !Array.isArray(input.points) || input.points.length < 2 || input.points.length > 100 || drawing.strokes.length >= 800) return;
         const color = typeof input.color === "string" && /^#[0-9a-f]{6}$/i.test(input.color) ? input.color : "#17201c";
         const size = Math.min(0.08, Math.max(0.003, Number(input.size) || 0.012));
-        const tool = input.tool === "line" || input.tool === "eraser" ? input.tool : "pen";
+        const tool = input.tool && STROKE_TOOLS.includes(input.tool) ? input.tool : "pen";
         const opacityValue = input.opacity == null ? 1 : Number(input.opacity);
         const opacity = Number.isFinite(opacityValue) ? Math.min(1, Math.max(0.1, opacityValue)) : 1;
         let points = input.points.filter(point => point && typeof point === "object").map(point => ({ x: Math.min(1, Math.max(0, Number(point.x) || 0)), y: Math.min(1, Math.max(0, Number(point.y) || 0)) }));
         if (points.length < 2) return;
-        if (tool === "line") points = [points[0], points[points.length - 1]];
+        if (tool !== "pen" && tool !== "eraser") points = [points[0], points[points.length - 1]];
         drawing.strokes.push({ color, size, tool, opacity, points });
       }
       await this.publish(); return;

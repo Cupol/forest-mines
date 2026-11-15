@@ -7,9 +7,9 @@
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
   <link rel="stylesheet" href="style.css?v=game-worlds-1">
-  <link rel="stylesheet" href="game-worlds.css?v=5">
+  <link rel="stylesheet" href="game-worlds.css?v=6">
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=game-worlds-1"></script>
+  <script type="module" src="app.js?v=draw-studio-1"></script>
 </head>
 <body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -39,10 +39,10 @@
         <div class="join-line"><input id="room-code" maxlength="6" placeholder="КОД КОМНАТЫ" aria-label="Код комнаты"><button id="join-room" class="button button-quiet" aria-label="Войти по коду">Войти <span>→</span></button></div>
         <button id="solo-start" class="text-button">Сыграть с ботом <span>→</span></button>
         <p class="lobby-error" id="lobby-error" role="alert"></p>
-        <aside class="four-room-guide" aria-labelledby="four-guide-title">
-          <h2 id="four-guide-title">Как начать</h2>
-          <p>Создай комнату и отправь ссылку другу. Если ты уже получил код, введи его здесь и нажми «Войти».</p>
-          <p>Хочешь освоиться? Нажми «Попробовать одному», чтобы сыграть с ботом.</p>
+        <aside class="room-guide" aria-labelledby="room-guide-title">
+          <h2 id="room-guide-title">Как начать</h2>
+          <p id="room-guide-tip"></p>
+          <p>Создай комнату и отправь ссылку друзьям или войди по коду.</p>
         </aside>
       </section>
       <section class="game-gallery" aria-label="Каталог игр"><h2>Все игры</h2><div id="game-gallery"></div></section>
@@ -146,9 +146,9 @@
             </div>
           </div>
           <div id="draw-tools" class="draw-tools hidden">
-            <div class="draw-tool-picker" role="group" aria-label="Инструмент"><button type="button" class="button selected" data-draw-tool="pen" aria-pressed="true">✎ Кисть</button><button type="button" class="button" data-draw-tool="line" aria-pressed="false">╱ Линия</button><button type="button" class="button" data-draw-tool="eraser" aria-pressed="false">▱ Ластик</button></div>
+            <div class="draw-tool-picker" role="group" aria-label="Инструмент"><button type="button" class="button selected" data-draw-tool="pen" aria-pressed="true">✎ Кисть</button><button type="button" class="button" data-draw-tool="line" aria-pressed="false">╱ Линия</button><button type="button" class="button" data-draw-tool="eraser" aria-pressed="false">▱ Ластик</button><button type="button" class="button" data-draw-tool="fill" aria-pressed="false">Заливка</button><button type="button" class="button" data-draw-tool="square" aria-pressed="false">□ Квадрат</button><button type="button" class="button" data-draw-tool="circle" aria-pressed="false">○ Круг</button><button type="button" class="button" data-draw-tool="rect" aria-pressed="false">▭ Прямоугольник</button><button type="button" class="button" data-draw-tool="ellipse" aria-pressed="false">⬭ Овал</button><button type="button" class="button" data-draw-tool="picker" aria-pressed="false">Пипетка</button></div>
             <div class="draw-colors" role="group" aria-label="Цвет"><button type="button" data-color="#17201c" aria-label="Тёмный цвет"></button><button type="button" data-color="#d54e43" aria-label="Красный цвет"></button><button type="button" data-color="#397cb2" aria-label="Синий цвет"></button><button type="button" data-color="#e2b342" aria-label="Жёлтый цвет"></button><button type="button" data-color="#57905c" aria-label="Зелёный цвет"></button><button type="button" data-color="#9a65a9" aria-label="Фиолетовый цвет"></button><button type="button" data-color="#f5f0dd" aria-label="Светлый цвет"></button></div>
-            <label>Размер <input id="draw-size" type="range" min="4" max="60" value="11"></label>
+            <label>Свой цвет <input id="draw-custom-color" type="color" value="#17201c"></label><label>Размер <input id="draw-size" type="range" min="4" max="60" value="11"></label>
             <label>Непрозрачность <input id="draw-opacity" type="range" min="10" max="100" step="10" value="100"><output id="draw-opacity-value" for="draw-opacity">100%</output></label>
             <button id="draw-clear" class="button button-quiet" type="button">Очистить</button>
             <div class="draw-assistance"><button id="draw-hint" class="button" type="button">✦ Дать подсказку</button><span id="draw-hint-count" role="status">Открыть одну букву остальным игрокам</span></div>

@@ -271,36 +271,39 @@ body[data-game="four"] .game-art { justify-self: start; width: min(100%, 400px);
 }
 
 .game-feature { display: contents; }
-.four-room-guide { display: none; }
-body[data-game="four"] .landing .intro {
+body[data-game] .landing .intro {
   min-height: 0;
   justify-content: flex-start;
 }
-body[data-game="four"] #hero-rules:empty { display: none; }
-body[data-game="four"] .landing .four-room-guide {
+body[data-game] #hero-rules:empty { display: none; }
+body[data-game] .landing .room-guide {
   display: block;
   border-top: 1px solid var(--line);
   margin-top: 19px;
   padding-top: 14px;
   color: var(--soft);
 }
-.four-room-guide h2 { margin: 0; color: var(--text); font-size: 17px; }
-.four-room-guide p { margin: 7px 0 0; font-size: 13px; line-height: 1.5; }
+.room-guide h2 { margin: 0; color: var(--text); font-size: 17px; }
+.room-guide p { margin: 7px 0 0; font-size: 13px; line-height: 1.5; }
 @media (min-width: 901px) {
-  body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .landing {
+  body[data-game] .landing {
     grid-template-areas: "catalog feature lobby" "footer footer footer";
     grid-template-rows: auto auto;
   }
-  body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .game-feature {
+  body[data-game] .game-feature {
     grid-area: feature;
     display: grid;
     align-content: start;
     gap: clamp(14px, 2vw, 22px);
     min-width: 0;
   }
-  body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .game-feature .intro,
-  body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .game-feature .game-art {
+  body[data-game] .game-feature .intro,
+  body[data-game] .game-feature .game-art {
     grid-area: auto;
     margin-block: 0;
   }
 }
+
+body[data-game="draw"] .game-art { min-height: clamp(120px, 18vw, 230px); max-height: 230px; }
+body[data-game] .draw-tool-picker { flex-wrap: wrap; }
+body[data-game] #draw-custom-color { width: 34px; height: 29px; padding: 2px; cursor: pointer; }

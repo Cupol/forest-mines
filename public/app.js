@@ -1,3 +1,4 @@
+import { isFreehand, paintStroke, sampleColor } from "./drawing-tools.js";
 import { TYPING_TEXTS } from "./typing-texts.js";
 import { createTablePractice } from "./table-practice.js";
 import { DRAW_WORDS } from "./draw-words.js";
@@ -40,7 +41,18 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   let game = null, socket = null, solo = false, botTimer = 0, flagMode = false, flagLimitCustom = false, roomId = "", myId = "", myToken = "", toastTimer = 0, winnerDismissed = false, drawingColor = "#17201c", activeStroke = null, drawClockTimer = 0;
   function showError(message) { ui.error.textContent = message; }
   let drawingTool = "pen", activeStrokeRound = 0, activePointerId = null;
+  const guideTips = {
+    sapper: "Открывай клетки и отмечай мины флажками. В одиночной партии одна мина завершает игру.",
+    draw: "В комнате художник выбирает слово, а остальные угадывают. В практике можно порисовать или угадать готовый рисунок.",
+    sea: "Расставь десять кораблей и нажми «Готов». Начать можно с партией против бота.",
+    typing: "После отсчёта перепечатай текст. Одиночный заезд покажет скорость и точность.",
+    four: "Выбери столбец, чтобы бросить фишку. Первую партию можно сыграть с ботом.",
+    pairs: "Открывай по две карточки. Совпали — получи очко и ещё один ход.",
+    cards: "Возьми карту или остановись. Попробуй набрать как можно ближе к 21.",
+    reaction: "Нажми, когда сигнал станет зелёным. В соло увидишь своё время в миллисекундах."
+  };
   function applySelectedMode() {
+    $("room-guide-tip").textContent = guideTips[selectedMode];
     const drawing = selectedMode === "draw";
     document.body.dataset.game = selectedMode;
     document.title = drawing ? "Рисуй и угадывай — Круг друзей" : "Сапёр — Круг друзей";
@@ -49,7 +61,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     $("hero-eyebrow").textContent = drawing ? "СЛОВО ЗАДАНО. ТВОЯ ОЧЕРЕДЬ РИСОВАТЬ." : "ТИШЕ. СЛУШАЙ. СМОТРИ ПОД НОГИ.";
     $("hero-title").innerHTML = drawing ? "Рисуй и<br><em>угадывай</em>" : "<em>Сапёр</em>";
     $("hero-description").textContent = drawing ? "Рисуй загаданное слово, пока друзья угадывают. Очки получают самые быстрые догадчики." : "Каждый ставит свои цветные флажки на подозрительные клетки. Если открыть мину, она взорвётся; остальные мины останутся скрыты до конца партии.";
-    $("hero-rules").innerHTML = drawing ? "<span><b>✎</b> рисуй по очереди</span><span><b>⌛</b> угадай за минуту</span><span><b>★</b> очки за скорость</span>" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
+    $("hero-rules").innerHTML = drawing ? "" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
     $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
     $("solo-start").textContent = drawing ? "Попробовать одному →" : "Сыграть с ботом →";
     if (isTableMode(selectedMode)) $("solo-start").textContent = "Попробовать одному →";
@@ -366,25 +378,28 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     $("phase-hint").textContent = solo ? "ПРОБНЫЙ РАУНД · МОЖНО НАЧАТЬ ЗАНОВО" : game.phase === "over" ? "ВСЕ РАУНДЫ ЗАВЕРШЕНЫ · ИТОГИ СПРАВА" : "РИСУЙ ИЛИ УГАДЫВАЙ · КАЖДЫЙ ИГРОК РИСУЕТ ОДИН РАЗ";
   }
   function escapeMarkup(value) { return String(value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char])); }
+  const committedCanvas = document.createElement("canvas");
+  let cachedStrokes = [];
   function renderDrawingCanvas(extra = null) {
     const canvas = ui.drawCanvas, context = canvas.getContext("2d");
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    const strokes = [...(game?.drawing?.strokes || []), ...(extra ? [extra] : [])];
-    for (const stroke of strokes) {
-      if (!stroke.points?.length) continue;
-      context.save();
-      context.globalCompositeOperation = stroke.tool === "eraser" ? "destination-out" : "source-over";
-      context.globalAlpha = stroke.tool === "eraser" ? 1 : (stroke.opacity ?? 1);
-      context.strokeStyle = stroke.color; context.lineWidth = Math.max(2, stroke.size * canvas.width); context.lineCap = "round"; context.lineJoin = "round";
-      if (stroke.points.length === 1 || stroke.points.every(point => point.x === stroke.points[0].x && point.y === stroke.points[0].y)) {
-        context.fillStyle = stroke.color; context.beginPath(); context.arc(stroke.points[0].x * canvas.width, stroke.points[0].y * canvas.height, context.lineWidth / 2, 0, Math.PI * 2); context.fill(); context.restore(); continue;
-      }
-      context.beginPath(); context.moveTo(stroke.points[0].x * canvas.width, stroke.points[0].y * canvas.height);
-      if (stroke.tool === "line") { const last = stroke.points.at(-1); context.lineTo(last.x * canvas.width, last.y * canvas.height); }
-      else for (let i = 1; i < stroke.points.length; i++) context.lineTo(stroke.points[i].x * canvas.width, stroke.points[i].y * canvas.height);
-      context.stroke();
-      context.restore();
+    const strokes = game?.drawing?.strokes || [];
+    const cachedContext = committedCanvas.getContext("2d", { willReadFrequently: true });
+    if (committedCanvas.width !== canvas.width || committedCanvas.height !== canvas.height) {
+      committedCanvas.width = canvas.width;
+      committedCanvas.height = canvas.height;
+      cachedStrokes = [];
     }
+    if (cachedStrokes.length > strokes.length || cachedStrokes.some((stroke, index) => stroke !== strokes[index])) {
+      cachedContext.clearRect(0, 0, canvas.width, canvas.height);
+      cachedStrokes = [];
+    }
+    for (const stroke of strokes.slice(cachedStrokes.length)) {
+      paintStroke(cachedContext, stroke);
+      cachedStrokes.push(stroke);
+    }
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(committedCanvas, 0, 0);
+    if (extra) paintStroke(context, extra);
   }
   function updateDrawClock() {
     const drawing = game?.drawing;
@@ -929,7 +944,17 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     if (text.toLocaleLowerCase("ru") === game.drawing.word) finishPractice("Угадал!");
     else { game.chat.push({ kind: "chat", name: "Ты", text }); draw(); }
   });
-  document.querySelectorAll(".draw-colors button").forEach(button => { button.style.setProperty("--draw-color", button.dataset.color); button.addEventListener("click", () => { drawingColor = button.dataset.color; document.querySelectorAll(".draw-colors button").forEach(item => item.classList.toggle("selected", item === button)); }); });
+  function setDrawingColor(color) {
+    drawingColor = color;
+    $("draw-custom-color").value = color;
+    document.querySelectorAll(".draw-colors button").forEach(button =>
+      button.classList.toggle("selected", button.dataset.color === color));
+  }
+  $("draw-custom-color").addEventListener("input", event => setDrawingColor(event.target.value));
+  document.querySelectorAll(".draw-colors button").forEach(button => {
+    button.style.setProperty("--draw-color", button.dataset.color);
+    button.addEventListener("click", () => setDrawingColor(button.dataset.color));
+  });
   function canPaint() { return game?.mode === "draw" && game.phase === "playing" && game.drawing?.drawerId === myId && game.drawing.stage !== "choosing"; }
   function sendDrawingAction(type, extra = {}) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, round: game?.drawing?.round, ...extra })); }
   for (let index = 0; index < 2; index++) $("draw-choice-" + index).addEventListener("click", () => {
@@ -957,13 +982,22 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   function canvasPoint(event) { const rect = ui.drawCanvas.getBoundingClientRect(); return { x: Math.round(Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) * 10000) / 10000, y: Math.round(Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)) * 10000) / 10000 }; }
   ui.drawCanvas.addEventListener("pointerdown", event => {
     if (!canPaint() || activeStroke || event.button !== 0 || !event.isPrimary) return;
-    event.preventDefault(); ui.drawCanvas.setPointerCapture(event.pointerId); activePointerId = event.pointerId; activeStrokeRound = game.drawing.round;
-    activeStroke = { tool: drawingTool, opacity: Number($("draw-opacity").value) / 100, color: drawingColor, size: Number($("draw-size").value) / ui.drawCanvas.width, points: [canvasPoint(event)] };
+    event.preventDefault();
+    const point = canvasPoint(event);
+    if (drawingTool === "picker") {
+      setDrawingColor(sampleColor(ui.drawCanvas, point, "#faf4ef"));
+      document.querySelector('[data-draw-tool="pen"]').click();
+      return;
+    }
+    activeStrokeRound = game.drawing.round;
+    activeStroke = { tool: drawingTool, opacity: Number($("draw-opacity").value) / 100, color: drawingColor, size: Number($("draw-size").value) / ui.drawCanvas.width, points: [point] };
+    if (drawingTool === "fill") { commitStroke(); return; }
+    ui.drawCanvas.setPointerCapture(event.pointerId); activePointerId = event.pointerId;
     renderDrawingCanvas(activeStroke);
   });
   function extendStroke(event, final = false) {
     if (!activeStroke || event.pointerId !== activePointerId) return;
-    if (activeStroke.tool === "line") activeStroke.points = [activeStroke.points[0], canvasPoint(event)];
+    if (!isFreehand(activeStroke.tool)) activeStroke.points = [activeStroke.points[0], canvasPoint(event)];
     else {
       const samples = final ? [event] : event.getCoalescedEvents?.();
       for (const sample of samples?.length ? samples : [event]) {
@@ -1003,6 +1037,9 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     if (!activeStroke || event.pointerId !== activePointerId) return;
     if (!canPaint() || activeStrokeRound !== game.drawing.round) { activeStroke = null; renderDrawingCanvas(); return; }
     extendStroke(event, true);
+    commitStroke();
+  }
+  function commitStroke() {
     if (activeStroke.points.length === 1) activeStroke.points.push({ ...activeStroke.points[0] });
     if (solo) { game.drawing.strokes.push(activeStroke); renderDrawingCanvas(); }
     else sendDrawingAction("stroke", { stroke: { ...activeStroke, points: pointsForNetwork(activeStroke.points) } });
