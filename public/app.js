@@ -1,4 +1,5 @@
 import { TYPING_TEXTS } from "./typing-texts.js";
+import { createTablePractice } from "./table-practice.js";
 import { DRAW_WORDS } from "./draw-words.js";
 import { FLEET, shipCells, canPlace } from "./sea-rules.js";
 
@@ -51,8 +52,8 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     $("hero-rules").innerHTML = drawing ? "<span><b>✎</b> рисуй по очереди</span><span><b>⌛</b> угадай за минуту</span><span><b>★</b> очки за скорость</span>" : "<span><b>↕</b> лимит флажков зависит от числа игроков</span><span><b>+2 / −3</b> находка / подрыв</span><span><b>🎨</b> свой цвет</span>";
     $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
     $("solo-start").textContent = drawing ? "Попробовать одному →" : "Сыграть с ботом →";
-    $("solo-start").classList.toggle("hidden", isTableMode(selectedMode) && selectedMode !== "reaction");
-    if (selectedMode === "reaction") $("solo-start").textContent = "Попробовать одному →";
+    if (isTableMode(selectedMode)) $("solo-start").textContent = "Попробовать одному →";
+    $("game-art").replaceChildren(...modeArt(selectedMode));
     if (selectedMode === "sea") {
       document.title = "Морской бой — Круг друзей";
       $("hero-eyebrow").textContent = "ДУЭЛЬ НА ВОДЕ";
@@ -134,7 +135,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   }
   function startView(id, mode, config) {
     roomId = id; solo = mode === "solo"; myId = "local-player";
-    game = { mode: "sapper", config, cells: makeBoard(config), players: [{ id: myId, name: cleanName() || "Смотритель", score: 0, explosions: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false, winnerId: "" };
+    game = { mode: "sapper", config, cells: makeBoard(config), players: [{ id: myId, name: ui.name.value.trim() ? cleanName() || "Ты" : "Ты", score: 0, explosions: 0, color: PLAYER_COLORS[0], flags: [], online: true }], safe: 0, phase: "playing", hostId: myId, over: false, winnerId: "" };
     showGame(mode); draw(); setStatus(solo ? "Партия с ботом началась." : "Комната создана. Позови остальных за стол.");
   }
   function showGame(mode) {
@@ -907,7 +908,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   $("practice-restart").addEventListener("click", () => startDrawingPractice(practiceRole));
   $("create-room").addEventListener("click", () => enterRoom(makeRoomCode(), true));
   $("join-room").addEventListener("click", () => { const code = ui.roomInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""); if (code.length < 4 || code.length > 6) { showError("Код комнаты — от 4 до 6 букв или цифр."); return; } enterRoom(code, false); });
-  $("solo-start").addEventListener("click", () => { if (selectedMode === "reaction") { startReactionPractice(); return; } if (selectedMode === "typing") { startTypingPractice(); return; } if (selectedMode === "sea") { startSeaPractice(); return; } if (selectedMode === "draw") { startDrawingPractice(); return; } if (!cleanName()) return; roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
+  $("solo-start").addEventListener("click", () => { if (selectedMode === "reaction") { startReactionPractice(); return; } if (isTableMode(selectedMode)) { startTablePractice(); return; } if (selectedMode === "typing") { startTypingPractice(); return; } if (selectedMode === "sea") { startSeaPractice(); return; } if (selectedMode === "draw") { startDrawingPractice(); return; } roomId = "ДУЭЛЬ"; const config = { ...PRESETS.medium, flags: PRESETS.medium.mines }; startView(roomId, "solo", config); game.players.push({ id: "forest-spirit", name: "Бот", score: 0, explosions: 0, color: PLAYER_COLORS[1], flags: [], online: true }); draw(); scheduleBot(900); });
   $("game-prev").addEventListener("click", () => changeGame(-1));
   $("game-next").addEventListener("click", () => changeGame(1));
   for (const button of document.querySelectorAll("[data-preset]")) button.addEventListener("click", () => {
@@ -1016,7 +1017,33 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}&game=${selectedMode}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });
   ui.flagMode.addEventListener("click", () => { flagMode = !flagMode; ui.flagMode.setAttribute("aria-pressed", String(flagMode)); setStatus(flagMode ? "Режим флажка: коснись клетки, которую хочешь проверить." : "Режим проверки клетки."); });
   const cardFaces = ["☀️", "🌙", "⭐", "🍒", "🍀", "💎", "🦋", "🍄"];
+  let tablePractice = null;
+  function startTablePractice() {
+    clearTimeout(botTimer);
+    tablePractice = createTablePractice(selectedMode, ui.name.value.trim());
+    ({ game, humanId: myId } = tablePractice);
+    solo = true;
+    roomId = "ПРАКТИКА";
+    showGame("solo");
+    draw();
+  }
+  function scheduleTableBot() {
+    const practice = tablePractice;
+    if (game !== practice.game || game.over || game.table.turn !== practice.botId) return;
+    botTimer = setTimeout(() => {
+      if (game !== practice.game || !practice.botMove()) return;
+      drawTable();
+      scheduleTableBot();
+    }, 650);
+  }
   function sendTable(type, index) {
+    if (solo && game === tablePractice?.game) {
+      if (tablePractice.play(myId, type, index)) {
+        drawTable();
+        scheduleTableBot();
+      }
+      return;
+    }
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, index }));
   }
   function startReactionPractice() {
@@ -1068,6 +1095,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     $("table-stand").classList.toggle("hidden", !cards || !canMove);
     $("table-card-status").textContent = cards && state ? "Твои очки: " + state.totals[myId] + (state.totals[myId] > 21 ? " · перебор" : "") : "";
     $("reaction-again").classList.toggle("hidden", !solo || !reaction || !game.over);
+    $("table-again").classList.toggle("hidden", !solo || game !== tablePractice?.game || !game.over);
     board.replaceChildren();
     if (game.mode === "reaction") {
       board.className = "table-board reaction-board";
@@ -1131,6 +1159,24 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   $("table-stand").addEventListener("click", () => sendTable("tableStand"));
   $("table-draw-card").addEventListener("click", () => sendTable("tableDraw"));
   $("table-start").addEventListener("click", () => sendTable("tableStart"));
+  $("table-again").addEventListener("click", startTablePractice);
+  function modeArt(mode) {
+    const motifs = {
+      sapper: ["A1", "2", "1", "▧", "⚑", "3", "▧", "B8", "1"],
+      draw: ["✦", "◒", "✎", "◞"],
+      sea: ["◉", "±", "⌖", "⇢"],
+      typing: ["К", "Л", "А", "В", "И", "Ш", "А", "▮"],
+      four: Array.from({ length: 24 }, (_, i) => i >= 16 ? "●" : "○"),
+      pairs: ["☾", "✦", "✦", "☾"],
+      cards: ["Т ♠", "К ♥"],
+      reaction: ["⚡", "◎", "•"]
+    };
+    return motifs[mode].map(mark => {
+      const item = document.createElement("span");
+      item.textContent = mark;
+      return item;
+    });
+  }
   for (const [mode, item] of Object.entries(catalog)) {
     const card = document.createElement("button"), icon = document.createElement("span");
     card.type = "button"; card.className = "gallery-card"; card.dataset.mode = mode;

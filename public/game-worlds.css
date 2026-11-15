@@ -1,0 +1,111 @@
+/* Every game has its own composition. The shared room controls keep their behavior. */
+body[data-game] .landing{--layout-gap:clamp(16px,3vw,36px);display:grid;gap:var(--layout-gap);padding-block:clamp(20px,5vw,62px) 24px;align-items:start}
+.landing .intro{grid-area:intro;min-width:0}
+.landing .lobby{grid-area:lobby;min-width:0}
+.landing .game-gallery{grid-area:catalog}
+.landing .bottom-note{grid-area:footer}
+.game-art{grid-area:art;display:grid;place-content:center;min-width:0;min-height:180px;overflow:hidden;user-select:none;pointer-events:none}
+body[data-game] .intro h1{font-size:clamp(34px,6.4vw,88px);overflow-wrap:anywhere}
+body[data-game] .lobby{padding:clamp(15px,3vw,28px)}
+body[data-game] .game-gallery{padding:10px 0 0}
+body[data-game] .gallery-card{min-height:60px}
+body[data-game] .topbar{padding-block:12px}
+body[data-game] .lobby .seal{display:none}
+
+/* Minefield: a technical console flanked by a narrow game index. */
+body[data-game="sapper"] .landing{grid-template:"catalog intro lobby" auto "catalog art lobby" auto "footer footer footer" auto / minmax(146px,.55fr) minmax(0,1.5fr) minmax(235px,1fr)}
+body[data-game="sapper"] #game-gallery{grid-template-columns:1fr}
+body[data-game="sapper"] .gallery-card{display:flex;align-items:center;gap:9px;min-height:42px;border-radius:0}
+body[data-game="sapper"] .gallery-icon{margin:0}
+body[data-game="sapper"] .game-art{min-height:0;grid-template-columns:repeat(3,1fr);gap:4px;justify-content:stretch}
+body[data-game="sapper"] .game-art span{border:1px solid #42645b;background:#16292b;padding:12px;text-align:center;color:#a7e0ae;font:700 17px var(--mono)}
+body[data-game="sapper"] .topbar{border-bottom:2px solid #5c8b7f}
+
+/* Drawing: ink on an oversized sheet, with the tools and entry card offset. */
+body[data-game="draw"] .landing{grid-template:"art intro" auto "art lobby" auto "catalog catalog" auto "footer footer" auto / minmax(0,1.15fr) minmax(0,1fr)}
+body[data-game="draw"] .game-art{position:relative;place-content:center;align-self:stretch;min-height:360px;background:#efdbd2;border:9px solid #f7eee8;border-radius:7% 28% 10% 18%;color:#853d77;box-shadow:10px 13px 0 #8a5eab55}
+body[data-game="draw"] .game-art span{position:absolute;font:700 clamp(48px,9vw,130px) var(--serif);line-height:1}
+body[data-game="draw"] .game-art span:nth-child(1){left:14%;top:12%;color:#df714b;transform:rotate(-16deg)}
+body[data-game="draw"] .game-art span:nth-child(2){right:14%;top:23%;color:#4f6eac}
+body[data-game="draw"] .game-art span:nth-child(3){left:38%;bottom:17%;transform:rotate(-15deg)}
+body[data-game="draw"] .game-art span:nth-child(4){left:12%;bottom:8%;color:#568774}
+body[data-game="draw"] .lobby{border:2px solid #a879ad;border-radius:8px 36px 36px 36px}
+body[data-game="draw"] .button{border-radius:18px 7px 18px 7px}
+body[data-game="draw"] .game-head{border-radius:26px 6px}
+
+/* Battleship: a wide bridge header above a radar and side console. */
+body[data-game="sea"] .landing{grid-template:"intro intro" auto "lobby art" auto "catalog catalog" auto "footer footer" auto / minmax(230px,.8fr) minmax(0,1.3fr)}
+body[data-game="sea"] .landing .intro{grid-area:intro;border-bottom:2px solid #447a91;padding-bottom:14px}
+body[data-game="sea"] .landing .lobby{grid-area:lobby;border-radius:5px 5px 28px 28px}
+body[data-game="sea"] .intro h1 br{display:none}
+body[data-game="sea"] .intro h1 em::before{content:" "}
+body[data-game="sea"] .game-art{grid-template-columns:repeat(2,1fr);align-self:stretch;border:1px solid #438599;border-radius:50%;aspect-ratio:1;width:min(100%,310px);justify-self:center;background:repeating-radial-gradient(circle,#5bbdce45 0 1px,transparent 2px 27px),conic-gradient(from 38deg,#6be2da44,transparent 90deg);color:#a3f3ea;font:700 clamp(25px,5vw,44px) var(--mono);gap:15px 40px;text-align:center}
+body[data-game="sea"] .game-head{border-radius:4px 4px 22px 22px}
+
+/* Typing: one document column, with a row of keycaps between text and entry. */
+body[data-game="typing"] .landing{grid-template:"intro" "art" "lobby" "catalog" "footer" / minmax(0,1fr);max-width:880px;width:100%;margin:auto}
+body[data-game="typing"] .intro{padding:clamp(16px,4vw,34px);background:#e9ca9e;color:#39271c;border-radius:2px;box-shadow:7px 7px #8a5f44}
+body[data-game="typing"] .intro h1,body[data-game="typing"] .intro h1 em,body[data-game="typing"] .intro>p,body[data-game="typing"] .intro .eyebrow,body[data-game="typing"] .intro .rules-strip{color:#35251a}
+body[data-game="typing"] .intro h1{font-family:var(--mono);font-size:clamp(27px,5.2vw,62px);letter-spacing:-.055em}
+body[data-game="typing"] .game-art{min-height:0;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;width:100%}
+body[data-game="typing"] .game-art span{display:grid;place-items:center;aspect-ratio:1.22;background:#6d4b38;border:1px solid #c68560;border-bottom-width:5px;border-radius:5px;font:700 clamp(14px,3vw,26px) var(--mono);color:#fff0d5}
+body[data-game="typing"] .lobby{border-radius:2px;border-left:6px solid #d4ad80}
+body[data-game="typing"] .game-head{border-radius:2px;border-left:6px solid #d4ad80}
+
+/* Four: a centered arcade cabinet, name and room below the marquee. */
+body[data-game="four"] .landing{grid-template:"intro intro" auto "art art" auto "lobby catalog" auto "footer footer" auto / minmax(260px,1fr) minmax(0,1.15fr)}
+body[data-game="four"] .intro{text-align:center}
+body[data-game="four"] .game-switch{justify-content:center}
+body[data-game="four"] .intro>p{margin-inline:auto}
+body[data-game="four"] .game-art{grid-template-columns:repeat(8,1fr);gap:3px 11px;padding:16px 24px;justify-self:center;border:6px solid #a65e3a;background:#46251c;border-radius:33px 33px 7px 7px;color:#ffbf65;font-size:clamp(18px,4vw,39px);min-height:0;width:min(100%,520px)}
+body[data-game="four"] .game-art span:nth-child(3n){color:#ffa1a2}
+body[data-game="four"] .lobby,body[data-game="four"] .game-head{border-radius:28px 28px 5px 5px}
+
+/* Memory: a slanted spread of four cards beside a narrow entrance. */
+body[data-game="pairs"] .landing{grid-template:"intro art lobby" auto "catalog art lobby" auto "footer footer footer" / minmax(0,1fr) minmax(0,.85fr) minmax(220px,1fr)}
+body[data-game="pairs"] .game-art{position:relative;align-self:stretch;min-height:300px}
+body[data-game="pairs"] .game-art span{display:grid;place-items:center;position:absolute;width:39%;aspect-ratio:3/4;border:2px solid #ad93dc;border-radius:8px 22px;background:#3e285f;color:#e7c3ff;font-size:clamp(20px,5vw,50px);box-shadow:0 8px 18px #130e27}
+body[data-game="pairs"] .game-art span:nth-child(1){left:9%;top:7%;transform:rotate(-13deg)}
+body[data-game="pairs"] .game-art span:nth-child(2){right:9%;top:19%;transform:rotate(13deg)}
+body[data-game="pairs"] .game-art span:nth-child(3){left:14%;top:45%;transform:rotate(-8deg)}
+body[data-game="pairs"] .game-art span:nth-child(4){right:8%;top:53%;transform:rotate(15deg)}
+body[data-game="pairs"] #game-gallery{grid-template-columns:repeat(2,minmax(0,1fr))}
+body[data-game="pairs"] .lobby,body[data-game="pairs"] .game-head{border-radius:6px 28px 6px 28px}
+
+/* 21: felt, an oval table edge and a small fan of playing cards. */
+body[data-game="cards"] .landing{grid-template:"intro intro" auto "art lobby" auto "art catalog" auto "footer footer" / minmax(0,1.1fr) minmax(0,1fr)}
+body[data-game="cards"] .game-art{align-self:stretch;position:relative;min-height:300px;border:9px double #a68254;border-radius:50%;background:radial-gradient(ellipse,#23664a,#12382b);box-shadow:inset 0 0 0 15px #142d24}
+body[data-game="cards"] .game-art span{position:absolute;display:grid;place-items:center;top:24%;left:24%;width:34%;aspect-ratio:2/3;background:#fff3dd;color:#222b24;border:2px solid #ccbb9a;border-radius:7px;font:700 clamp(20px,5vw,58px) var(--serif);transform:rotate(-20deg);box-shadow:5px 7px 15px #03161088}
+body[data-game="cards"] .game-art span+span{left:45%;top:30%;transform:rotate(15deg);color:#a72e3f}
+body[data-game="cards"] .lobby,body[data-game="cards"] .game-head{border-radius:48px;border:4px double #739373}
+body[data-game="cards"] .button{border-radius:24px}
+
+/* Reaction: a compact speed panel with a circular signal. */
+body[data-game="reaction"] .landing{grid-template:"intro art" auto "lobby art" auto "catalog catalog" auto "footer footer" / minmax(0,.85fr) minmax(0,1.2fr)}
+body[data-game="reaction"] .game-art{position:relative;align-self:stretch;aspect-ratio:1;width:min(100%,430px);justify-self:center;border:2px dashed #9e8cd1;border-radius:50%;background:repeating-radial-gradient(circle,#7d6bc377 0 1px,transparent 2px 30px),radial-gradient(circle,#8278b65e,transparent 66%)}
+body[data-game="reaction"] .game-art span{font:700 clamp(44px,10vw,118px) var(--sans);color:#ffe87d}
+body[data-game="reaction"] .game-art span:nth-child(n+2){position:absolute;font-size:25px;color:#84ff9c}
+body[data-game="reaction"] .game-art span:nth-child(2){top:14%;left:48%}
+body[data-game="reaction"] .game-art span:nth-child(3){right:18%;bottom:23%}
+body[data-game="reaction"] .lobby,body[data-game="reaction"] .game-head{border-radius:60px 12px}
+body[data-game="reaction"] .button{border-radius:999px}
+
+@media(max-width:950px){
+  body[data-game="sapper"] .landing{grid-template:"intro lobby" "art lobby" "catalog catalog" "footer footer" / minmax(0,1fr) minmax(220px,1fr)}
+  body[data-game="sapper"] #game-gallery{grid-template-columns:repeat(auto-fit,minmax(135px,1fr))}
+  body[data-game="pairs"] .landing{grid-template:"intro art" "lobby art" "catalog catalog" "footer footer" / minmax(0,1fr) minmax(0,.8fr)}
+}
+@media(max-width:620px){
+  body[data-game] .landing{grid-template:"intro" "art" "lobby" "catalog" "footer" / minmax(0,1fr)}
+  body[data-game="sapper"] .landing{grid-template:"intro" "lobby" "art" "catalog" "footer" / minmax(0,1fr)}
+  body[data-game="sea"] .landing{grid-template:"intro" "lobby" "art" "catalog" "footer" / minmax(0,1fr)}
+  body[data-game="sea"] .landing .intro{grid-area:intro}
+  body[data-game="sea"] .game-art,body[data-game="reaction"] .game-art{width:170px;min-height:0}
+  body[data-game="draw"] .game-art,body[data-game="pairs"] .game-art,body[data-game="cards"] .game-art{min-height:165px;max-height:200px}
+  body[data-game="pairs"] .game-art{width:200px;justify-self:center}
+  body[data-game="pairs"] .game-art span{width:31%}
+  body[data-game="cards"] .game-art{width:235px;justify-self:center}
+  body[data-game="cards"] .game-art span{width:27%}
+  body[data-game] .intro h1{font-size:clamp(34px,10vw,60px)}
+  body[data-game="typing"] .intro h1{font-size:clamp(23px,7vw,42px)}
+}
