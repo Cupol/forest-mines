@@ -214,7 +214,9 @@ export class GameRoom extends DurableObject<Env> {
         const occupiedFlags = new Set<number>();
         this.game.players.forEach((player, index) => {
           player.token ??= crypto.randomUUID(); player.color ??= PLAYER_COLORS[index % PLAYER_COLORS.length]; player.flags ??= []; player.score ??= 0; player.explosions ??= 0;
-          player.flags = player.flags.filter(flag => { if (occupiedFlags.has(flag)) return false; occupiedFlags.add(flag); return true; });
+          if (this.game?.config?.rules !== "classic") {
+            player.flags = player.flags.filter(flag => { if (occupiedFlags.has(flag)) return false; occupiedFlags.add(flag); return true; });
+          }
         });
       }
     });
@@ -274,6 +276,7 @@ export class GameRoom extends DurableObject<Env> {
           await this.ctx.storage.setAlarm(deadline);
         }
         this.game.config = config; this.game.cells = randomBoard(config); this.game.safe = 0;
+        if (config.rules === "classic") this.game.boardVersion = 0;
         this.game.phase = "playing"; this.game.winnerId = ""; this.game.event = { kind: "started", name: String(config.flags), id: attachment.id };
         await this.publish(); return;
       }

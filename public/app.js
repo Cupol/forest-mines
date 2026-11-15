@@ -241,7 +241,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   }
   function sendAction(type, index) {
     if (!game || game.over || game.phase !== "playing") return;
-    if (!solo) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, index, boardVersion: game.boardVersion })); return; }
+    if (!solo) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, index, boardVersion: game.boardVersion ?? 0 })); return; }
     localAction(myId, type, index);
   }
   function personalFlags(id) { return game.players.find(p => p.id === id)?.flags || []; }
