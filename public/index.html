@@ -7,7 +7,7 @@
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
   <link rel="stylesheet" href="style.css?v=game-worlds-1">
-  <link rel="stylesheet" href="game-worlds.css?v=4">
+  <link rel="stylesheet" href="game-worlds.css?v=5">
   <script src="config.js"></script>
   <script type="module" src="app.js?v=game-worlds-1"></script>
 </head>
@@ -39,6 +39,11 @@
         <div class="join-line"><input id="room-code" maxlength="6" placeholder="КОД КОМНАТЫ" aria-label="Код комнаты"><button id="join-room" class="button button-quiet" aria-label="Войти по коду">Войти <span>→</span></button></div>
         <button id="solo-start" class="text-button">Сыграть с ботом <span>→</span></button>
         <p class="lobby-error" id="lobby-error" role="alert"></p>
+        <aside class="four-room-guide" aria-labelledby="four-guide-title">
+          <h2 id="four-guide-title">Как начать</h2>
+          <p>Создай комнату и отправь ссылку другу. Если ты уже получил код, введи его здесь и нажми «Войти».</p>
+          <p>Хочешь освоиться? Нажми «Попробовать одному», чтобы сыграть с ботом.</p>
+        </aside>
       </section>
       <section class="game-gallery" aria-label="Каталог игр"><h2>Все игры</h2><div id="game-gallery"></div></section>
       <div class="bottom-note"><span>ИГРАЙТЕ ВМЕСТЕ</span><span>КОМНАТА ПО ССЫЛКЕ</span><span id="landing-cap">ДО 20 ИГРОКОВ</span></div>

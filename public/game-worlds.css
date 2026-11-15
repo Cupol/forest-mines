@@ -271,6 +271,21 @@ body[data-game="four"] .game-art { justify-self: start; width: min(100%, 400px);
 }
 
 .game-feature { display: contents; }
+.four-room-guide { display: none; }
+body[data-game="four"] .landing .intro {
+  min-height: 0;
+  justify-content: flex-start;
+}
+body[data-game="four"] #hero-rules:empty { display: none; }
+body[data-game="four"] .landing .four-room-guide {
+  display: block;
+  border-top: 1px solid var(--line);
+  margin-top: 19px;
+  padding-top: 14px;
+  color: var(--soft);
+}
+.four-room-guide h2 { margin: 0; color: var(--text); font-size: 17px; }
+.four-room-guide p { margin: 7px 0 0; font-size: 13px; line-height: 1.5; }
 @media (min-width: 901px) {
   body:is([data-game="cards"], [data-game="reaction"], [data-game="four"]) .landing {
     grid-template-areas: "catalog feature lobby" "footer footer footer";
