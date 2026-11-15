@@ -166,14 +166,20 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     return Math.max(1, Math.ceil(mines * spareFactor / count));
   }
   function refreshAutomaticFlagLimit(force = false) {
-    if (flagLimitCustom && !force) return;
     const mineCount = Number($("mine-total").value) || PRESETS.medium.mines;
+    const classic = $("sapper-rules").value === "classic";
+    $("flag-total").readOnly = classic;
+    $("sapper-rules-note").textContent = classic
+      ? "Одна мина — выбывание. Открывай клетки хотя бы раз в минуту."
+      : "Общие флажки и очки в конце партии. Лимит флажков можно менять.";
+    if (classic) { $("flag-total").value = mineCount; return; }
+    if (flagLimitCustom && !force) return;
     const players = game?.players.filter(player => player.online !== false).length || 1;
     $("flag-total").value = automaticFlagLimit(mineCount, players);
   }
   function chosenSettings(inRoom = false) {
     const error = inRoom ? $("setup-error") : ui.error;
-    const config = { width: Number($("board-width").value), height: Number($("board-height").value), mines: Number($("mine-total").value), flags: Number($("flag-total").value) };
+    const config = { width: Number($("board-width").value), height: Number($("board-height").value), mines: Number($("mine-total").value), flags: Number($("flag-total").value), rules: $("sapper-rules").value };
     const total = config.width * config.height;
     if (![config.width, config.height, config.mines, config.flags].every(Number.isInteger) || config.width < 8 || config.width > 30 || config.height < 8 || config.height > 30 || config.mines < 1 || config.mines >= total || config.flags < 1 || config.flags > total) {
       error.textContent = "Размер поля: от 8 до 30 клеток по каждой стороне. Укажи допустимое число мин и флажков."; return null;
@@ -183,7 +189,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   function enterRoom(code, makeNew) {
     const name = cleanName(); if (!name) return;
     seaDraft = FLEET.map(() => null); seaSelected = 0; seaVertical = false;
-    if (makeNew) flagLimitCustom = false;
+    if (makeNew) { flagLimitCustom = false; $("sapper-rules").value = "classic"; }
     const api = apiAddress();
     if (!api) { showError("Сервер комнаты ещё не подключён. Пока доступна одиночная игра."); return; }
     roomId = code;
@@ -202,10 +208,11 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     socket.addEventListener("message", event => {
       let message; try { message = JSON.parse(event.data); } catch (_) { return; }
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
-      if (message.type === "notice") { if (selectedMode === "draw") ui.drawLobbyError.textContent = message.text || "Действие недоступно."; else setStatus(message.text || "Действие недоступно.", "hit"); return; }
+      if (message.type === "notice") { if (selectedMode === "draw") ui.drawLobbyError.textContent = message.text || "Действие недоступно."; else if (game?.phase === "lobby" && selectedMode === "sapper") $("setup-error").textContent = message.text; else setStatus(message.text || "Действие недоступно.", "hit"); return; }
       if (message.type === "state") {
         selectedMode = modes.includes(message.mode) ? message.mode : "sapper";
         game = { mode: selectedMode, cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "", drawing: message.drawing, chat: message.chat || [] };
+        game.boardVersion = message.boardVersion ?? 0;
         game.sea = message.sea;
         game.table = message.table;
         game.typing = message.typing;
@@ -213,7 +220,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
         if (message.token) { myToken = message.token; localStorage.setItem(`forest-mines-token:${roomId}`, myToken); }
         myId = message.me; ui.error.textContent = ""; showGame("online"); draw();
         if (message.event) summarize(message.event);
-        else if (game.over && game.mode === "sapper") showWinner();
+        if (game.over && game.mode === "sapper") showWinner();
         if (game.phase === "lobby" && game.mode === "sapper") setStatus(game.hostId === myId ? "Комната открыта. Друзья могут присоединяться; выбери поле, когда будете готовы." : "Ты в лобби. Ждём, пока ведущий создаст поле.");
       }
     });
@@ -221,6 +228,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     socket.addEventListener("error", () => { [$("create-room"), $("join-room")].forEach(b => b.disabled = false); showError("Не удалось соединиться с сервером комнаты."); });
   }
   function teardown(returnToMenu = true) {
+    clearInterval(classicClock);
     clearInterval(typingClock); clearTimeout(typingFlush);
     typingEdits = []; typingRound = 0;
     clearTimeout(botTimer); clearInterval(drawClockTimer); drawClockTimer = 0;
@@ -233,7 +241,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   }
   function sendAction(type, index) {
     if (!game || game.over || game.phase !== "playing") return;
-    if (!solo) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, index })); return; }
+    if (!solo) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, index, boardVersion: game.boardVersion })); return; }
     localAction(myId, type, index);
   }
   function personalFlags(id) { return game.players.find(p => p.id === id)?.flags || []; }
@@ -302,12 +310,24 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     if (event.kind === "finished") {
       setStatus("Партия завершена. Результат — в итогах.", "found"); showWinner();
     }
+    else if (event.kind === "classicMine" && !currentPlayer()?.eliminated) setStatus(event.name + " подорвался и выбыл.", "hit");
+    else if (event.kind === "classicBoard" && !currentPlayer()?.eliminated) setStatus("Поле очищено. Игра продолжается на новом поле.", "found");
     else if (event.kind === "boom") setStatus(`${event.name} подорвался на мине: −3 очка.`, "hit");
     else if (event.kind === "started") setStatus(`Партия началась. Лимит — ${event.name} флажков каждому. Вход новых игроков закрыт.`);
     else if (event.kind === "joined") notify(`${event.name} сел за стол`);
   }
   function showWinner() {
     if (!game?.over || winnerDismissed) return;
+    if (game.config?.rules === "classic") {
+      const winner = game.players.find(player => player.id === game.winnerId);
+      ui.winnerTitle.textContent = winner ? "Победитель — " + winner.name + "!" : "Партия без победителя";
+      const reason = currentPlayer()?.eliminated;
+      const result = winner ? "Последний оставшийся игрок." : "Все участники выбыли.";
+      ui.winnerMessage.textContent = reason === "mine" ? "Ты подорвался. " + result :
+        reason === "idle" ? "Ты выбыл из-за бездействия. " + result : result;
+      ui.winnerOverlay.classList.remove("hidden");
+      return;
+    }
     if (game.mineLoss) {
       ui.winnerTitle.textContent = "Ты подорвался!";
       ui.winnerMessage.textContent = "Ты открыл мину и проиграл партию.";
@@ -611,6 +631,18 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     if (seaDraft.every(Boolean) && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "seaReady", fleet: seaDraft }));
   });
 
+  let classicClock = 0;
+  function updateClassicClock() {
+    const me = currentPlayer();
+    const note = $("classic-note");
+    const left = Math.max(0, Math.ceil(((me?.moveBy ?? 0) - Date.now()) / 1000));
+    if (game.over) note.textContent = "Партия завершена.";
+    else if (me?.eliminated) {
+      note.textContent = me.eliminated === "mine" ? "Ты подорвался и проиграл. Остальные продолжают." : "Ты выбыл из-за бездействия. Можно наблюдать.";
+      setStatus(note.textContent, "hit");
+    } else note.textContent = "Открой новую клетку в течение " + left + " сек. Флажки таймер не продлевают.";
+  }
+
   function draw() {
     if (!game) return;
     $("table-dashboard").classList.toggle("hidden", !isTableMode(game.mode));
@@ -638,7 +670,9 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       return;
     }
     ui.roomSetup.classList.add("hidden"); ui.dashboard.classList.remove("hidden"); ui.heading.textContent = game.over ? "Итоги партии" : "Чьи флажки точнее?";
-    const { width, height, mines, flags } = game.config;
+    const { width, height, mines, flags, rules } = game.config;
+    const classic = rules === "classic", me = currentPlayer();
+    if (classic && !game.over) ui.heading.textContent = "Классика · на выбывание";
     const safeCount = Math.max(0, game.cells.length - mines);
     ui.board.replaceChildren();
     ui.board.style.gridTemplateColumns = `repeat(${width}, minmax(21px, 34px))`;
@@ -660,15 +694,19 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
         if (owners.length > 3) { const extra = document.createElement("small"); extra.textContent = `+${owners.length - 3}`; stack.append(extra); }
         button.append(stack); button.setAttribute("aria-label", `Флажки: ${owners.map(owner => owner.name).join(", ")}`);
       } else if (!c.open) button.setAttribute("aria-label", "Неизвестная клетка");
-      if (game.phase !== "playing" || (c.open && !personalFlags(myId).includes(i)) || game.over) button.disabled = true;
+      if (game.phase !== "playing" || (c.open && !personalFlags(myId).includes(i)) || game.over || (classic && me?.eliminated)) button.disabled = true;
       button.addEventListener("click", () => { if (flagMode) sendAction("flag", i); else sendAction("open", i); });
       button.addEventListener("contextmenu", event => { event.preventDefault(); sendAction("flag", i); });
       fragment.appendChild(button);
     }
     ui.board.appendChild(fragment);
     ui.found.textContent = game.safe; ui.safeTotal.textContent = safeCount; ui.safe.textContent = Math.max(0, safeCount - game.safe); ui.mineCount.textContent = mines; ui.progress.style.width = `${100 * game.safe / safeCount}%`;
-    const me = currentPlayer(); ui.score.textContent = game.over && me ? me.score : "—";
-    const label = document.getElementById("score-label"); if (label) label.textContent = game.over ? "ТВОЙ ИТОГ" : "РЕЗУЛЬТАТ В КОНЦЕ";
+    clearInterval(classicClock);
+    $("classic-note").classList.toggle("hidden", !classic);
+    $("points-note").classList.toggle("hidden", classic);
+    if (classic) { updateClassicClock(); if (!game.over && !me?.eliminated) classicClock = setInterval(updateClassicClock, 1000); }
+    ui.score.textContent = classic ? game.players.filter(p => !p.eliminated).length : game.over && me ? me.score : "—";
+    const label = document.getElementById("score-label"); if (label) label.textContent = classic ? "ОСТАЛОСЬ ИГРОКОВ" : game.over ? "ТВОЙ ИТОГ" : "РЕЗУЛЬТАТ В КОНЦЕ";
     ui.flagsLeft.textContent = Math.max(0, flags - (me?.flags.length || 0)); ui.flagCap.textContent = flags;
     ui.playerCount.textContent = `${game.players.filter(p => p.online !== false).length} / ${MAX_PLAYERS}`;
     ui.settingsSummary.textContent = `${width} × ${height}  ·  ${mines} мин  ·  ${flags} флажков каждому`;
@@ -679,7 +717,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     for (const [rank, player] of game.players.toSorted((a, b) => b.score - a.score).entries()) {
       const row = document.createElement("li"), points = document.createElement("span"), avatar = document.createElement("span"), details = document.createElement("span"), name = document.createElement("span"), resources = document.createElement("span");
       const left = Math.max(0, flags - (player.flags?.length || 0));
-      row.className = "player-row" + (player.id === myId ? " player-me" : ""); avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); avatar.style.color = player.color || PLAYER_COLORS[0]; details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.online === false ? " · вышел" : ""); resources.className = "player-sub"; resources.textContent = `⚑ ${left} свободно`; points.className = "player-points"; points.textContent = game.over ? String(player.score) : "—";
+      row.className = "player-row" + (player.id === myId ? " player-me" : ""); avatar.className = "player-avatar"; avatar.textContent = (player.name || "?").slice(0, 1).toUpperCase(); avatar.style.color = player.color || PLAYER_COLORS[0]; details.className = "player-details"; name.className = "player-name"; name.textContent = player.name + (player.online === false ? " · вышел" : ""); resources.className = "player-sub"; resources.textContent = classic ? (player.eliminated === "mine" ? "Подорвался" : player.eliminated === "idle" ? "Выбыл за АФК" : player.id === myId ? `⚑ ${left} свободно` : "В игре") : `⚑ ${left} свободно`; points.className = "player-points"; points.textContent = game.over && !classic ? String(player.score) : "—";
       details.append(name, resources); row.append(avatar, details, points); ui.playerList.append(row);
     }
     ui.board.classList.toggle("game-over", Boolean(game.over));
@@ -932,6 +970,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     document.querySelectorAll("[data-preset]").forEach(item => item.classList.toggle("selected", item === button)); showError(""); $("setup-error").textContent = "";
   });
   for (const id of ["board-width", "board-height", "mine-total"]) $(id).addEventListener("input", () => { document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; refreshAutomaticFlagLimit(); });
+  $("sapper-rules").addEventListener("change", () => { flagLimitCustom = false; refreshAutomaticFlagLimit(true); });
   $("flag-total").addEventListener("input", () => { flagLimitCustom = true; document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("selected")); $("setup-error").textContent = ""; });
   ui.createBoard.addEventListener("click", () => { const config = chosenSettings(true); if (socket && config && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start", config })); });
   $("start-drawing").addEventListener("click", () => { ui.drawLobbyError.textContent = ""; if (socket?.readyState === WebSocket.OPEN && game?.phase === "lobby" && game.hostId === myId) socket.send(JSON.stringify({ type: "start" })); });

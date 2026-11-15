@@ -307,3 +307,14 @@ body[data-game] .landing .room-guide {
 body[data-game="draw"] .game-art { min-height: clamp(120px, 18vw, 230px); max-height: 230px; }
 body[data-game] .draw-tool-picker { flex-wrap: wrap; }
 body[data-game] #draw-custom-color { width: 34px; height: 29px; padding: 2px; cursor: pointer; }
+body[data-game="sapper"] #sapper-rules {
+  display: block;
+  margin-top: 7px;
+  width: min(100%, 330px);
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: 500 13px var(--sans);
+}
+body[data-game="sapper"] #flag-total:read-only { opacity: .8; }

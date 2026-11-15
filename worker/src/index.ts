@@ -8,7 +8,7 @@ const KEY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#f39a5e", "#65d2bb", "#df8add", "#a9bdff", "#d2dc72", "#ff8580", "#80d8e8", "#ffc978", "#90b8f0", "#c2dc85", "#eea7c7", "#70d5a0", "#e8a567", "#9e9cf2", "#c7d0da"];
 
 interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
-interface GameConfig { width: number; height: number; mines: number; flags: number }
+interface GameConfig { width: number; height: number; mines: number; flags: number; rules?: "classic" | "points" }
 import { TYPING_TEXTS } from "../../public/typing-texts.js";
 
 type GameMode = "sapper" | "draw" | "sea" | "typing" | "four" | "pairs" | "cards" | "reaction";
@@ -71,12 +71,12 @@ interface SeaGame {
   turn: string;
 }
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
-interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean }
+interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean; eliminated?: "mine" | "idle"; moveBy?: number; classicOpened?: boolean }
 const STROKE_TOOLS = ["pen", "line", "eraser", "fill", "square", "circle", "rect", "ellipse"] as const;
 interface Stroke { color: string; size: number; tool?: (typeof STROKE_TOOLS)[number]; opacity?: number; points: { x: number; y: number }[] }
 interface ChatLine { id: string; kind: "chat" | "system"; name: string; text: string; at: number }
 interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; stage: "choosing" | "drawing"; choices: string[]; offeredWords?: string[]; revealedIndices: number[]; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
-interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; table?: TableGame; typing?: TypingRace; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
+interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; boardVersion?: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; table?: TableGame; typing?: TypingRace; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
 interface Identity { id: string; name: string }
 
 function normalizeWord(value: unknown): string { return String(value ?? "").toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, ""); }
@@ -121,6 +121,8 @@ function protectFirstOpen(cells: Cell[], index: number, config: GameConfig): voi
   for (let i = 0; i < cells.length; i++) cells[i].near = cells[i].mine ? 0 : neighbours(i, config).filter(j => cells[j].mine).length;
 }
 function safeName(value: unknown): string { return String(value ?? "Смотритель").replace(/[<>\u0000-\u001f]/g, "").trim().slice(0, 20) || "Смотритель"; }
+const CLASSIC_IDLE_MS = 60_000;
+
 function safeConfig(value: unknown): GameConfig {
   const candidate = value && typeof value === "object" ? value as Partial<GameConfig> : DEFAULT_CONFIG;
   const width = Math.max(8, Math.min(30, Math.round(Number(candidate.width) || DEFAULT_CONFIG.width)));
@@ -128,7 +130,8 @@ function safeConfig(value: unknown): GameConfig {
   const total = width * height;
   const mines = Math.max(1, Math.min(total - 1, Math.round(Number(candidate.mines) || DEFAULT_CONFIG.mines)));
   const flags = Math.max(1, Math.min(total, Math.round(Number(candidate.flags) || DEFAULT_CONFIG.flags)));
-  return { width, height, mines, flags };
+  const rules = candidate.rules === "points" ? "points" : "classic";
+  return { width, height, mines, flags: rules === "classic" ? mines : flags, rules };
 }
 function freshGame(mode: GameMode = "sapper"): Game { return { mode, config: null, cells: [], players: [], safe: 0, phase: "lobby", hostId: "", over: false, event: null, chat: [] }; }
 function stripSecrets(game: Game, me: Player) {
@@ -167,8 +170,8 @@ function stripSecrets(game: Game, me: Player) {
       cards: game.table.deck.map((value, index) => game.table!.open.includes(index) || game.table!.found[index] ? value : null)
     } : null,
     cells: game.cells.map(c => c.open || game.over ? { open: true, mine: c.mine, near: c.near, boom: c.boom, by: c.by } : { open: false }),
-    players: game.players.map(({ id, name, score, explosions, color, flags, online }) => ({ id, name, score: game.mode === "draw" || game.over ? score : 0, explosions, color, flags, online })),
-    drawing: publicDrawing, chat: game.chat ?? [], config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, over: game.over, winnerId: game.winnerId ?? "", event: game.event,
+    players: game.players.map(({ id, name, score, explosions, color, flags, online, eliminated, moveBy }) => ({ id, name, score: game.mode === "draw" || game.over ? score : 0, explosions, color, flags: game.config?.rules === "classic" && id !== me.id ? [] : flags, online, eliminated, moveBy: id === me.id ? moveBy : undefined })),
+    drawing: publicDrawing, chat: game.chat ?? [], config: game.config, phase: game.phase, hostId: game.hostId, token: me.token, safe: game.safe, boardVersion: game.boardVersion, over: game.over, winnerId: game.winnerId ?? "", event: game.event,
   };
 }
 
@@ -232,6 +235,7 @@ export class GameRoom extends DurableObject<Env> {
       if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1, this.game.drawing.endsAt));
       else if (this.game?.mode === "typing" && this.game.phase === "playing" && this.game.typing) await this.ctx.storage.setAlarm(this.game.typing.endsAt);
       else if (this.game?.phase === "playing" && this.game.table?.reaction && !this.game.table.reaction.ready) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1, this.game.table.reaction.signalAt));
+      else if (this.game?.phase === "playing" && this.game.config?.rules === "classic") await this.scheduleClassicAlarm();
       else await this.ctx.storage.deleteAlarm();
       const pair = new WebSocketPair();
       const client = pair[0], server = pair[1];
@@ -258,6 +262,17 @@ export class GameRoom extends DurableObject<Env> {
         if (this.game.phase !== "lobby" || this.game.hostId !== attachment.id) return;
         if ((this.game.mode ?? "sapper") === "draw") { await this.startDrawing(socket, attachment.id); return; }
         const config = safeConfig(packet.config);
+        if (config.rules === "classic") {
+          const active = this.game.players.filter(player => player.online);
+          if (active.length < 2) {
+            socket.send(JSON.stringify({ type: "notice", text: "Для классической партии нужны хотя бы два игрока." }));
+            return;
+          }
+          this.game.players = active;
+          const deadline = Date.now() + CLASSIC_IDLE_MS;
+          for (const player of active) player.moveBy = deadline;
+          await this.ctx.storage.setAlarm(deadline);
+        }
         this.game.config = config; this.game.cells = randomBoard(config); this.game.safe = 0;
         this.game.phase = "playing"; this.game.winnerId = ""; this.game.event = { kind: "started", name: String(config.flags), id: attachment.id };
         await this.publish(); return;
@@ -267,6 +282,11 @@ export class GameRoom extends DurableObject<Env> {
       const index = Number(packet.index);
       if (!Number.isInteger(index) || index < 0 || index >= this.game.cells.length || this.game.phase !== "playing" || this.game.over) return;
       const player = this.game.players.find(p => p.id === attachment.id)!;
+      if (this.game.config?.rules === "classic") {
+        if (packet.boardVersion !== (this.game.boardVersion ?? 0)) return;
+        await this.handleClassicMove(socket, player, packet.type, index);
+        return;
+      }
       const cell = this.game.cells[index];
       this.game.event = null;
       if (packet.type === "flag") {
@@ -294,6 +314,89 @@ export class GameRoom extends DurableObject<Env> {
       }
       await this.publish();
     });
+  }
+
+  private async scheduleClassicAlarm() {
+    const deadlines = this.game!.players.filter(player => !player.eliminated).map(player => player.moveBy ?? Infinity);
+    const next = Math.min(...deadlines);
+    if (Number.isFinite(next)) await this.ctx.storage.setAlarm(Math.max(Date.now() + 1, next));
+  }
+
+  private async settleClassic() {
+    const game = this.game!;
+    const active = game.players.filter(player => !player.eliminated);
+    if (active.length > 1 || (active.length === 1 && !active[0].classicOpened)) {
+      await this.scheduleClassicAlarm(); return;
+    }
+    game.phase = "over"; game.over = true;
+    game.winnerId = active[0]?.id ?? "";
+    game.event = null;
+    await this.ctx.storage.deleteAlarm();
+  }
+
+  private async expireClassicPlayers() {
+    const now = Date.now();
+    let expired = false;
+    for (const player of this.game!.players) {
+      if (!player.eliminated && player.moveBy !== undefined && player.moveBy <= now) {
+        player.eliminated = "idle";
+        expired = true;
+      }
+    }
+    if (expired) { this.game!.event = null; await this.settleClassic(); }
+    return expired;
+  }
+
+  private async handleClassicMove(socket: WebSocket, player: Player, action: string, index: number) {
+    const game = this.game!, config = game.config!;
+    const expired = await this.expireClassicPlayers();
+    if (expired) await this.publish();
+    if (game.over || player.eliminated) return;
+    const cell = game.cells[index];
+    if (cell.open) return;
+    game.event = null;
+    if (action === "flag") {
+      const old = player.flags.indexOf(index);
+      if (old >= 0) player.flags.splice(old, 1);
+      else if (player.flags.length < config.mines) player.flags.push(index);
+      else {
+        socket.send(JSON.stringify({ type: "notice", text: "Лимит флажков достигнут. Сними один и поставь его в другое место." }));
+        return;
+      }
+      await this.publish();
+      return;
+    }
+    if (player.flags.includes(index)) return;
+    if (!game.cells.some(candidate => candidate.open)) protectFirstOpen(game.cells, index, config);
+    if (cell.mine) {
+      cell.open = true; cell.boom = true; cell.by = player.name;
+      player.explosions++; player.eliminated = "mine";
+      for (const member of game.players) member.flags = member.flags.filter(flag => flag !== index);
+      game.event = { kind: "classicMine", name: player.name, id: player.id };
+    } else {
+      const queue = [index], opened = new Set(queue), flags = new Set(player.flags);
+      for (const position of queue) {
+        const current = game.cells[position];
+        current.open = true; current.by = player.name; game.safe++;
+        if (current.near) continue;
+        for (const next of neighbours(position, config)) {
+          if (!opened.has(next) && !game.cells[next].mine && !game.cells[next].open && !flags.has(next)) {
+            opened.add(next); queue.push(next);
+          }
+        }
+      }
+      player.moveBy = Date.now() + CLASSIC_IDLE_MS;
+      player.classicOpened = true;
+      for (const member of game.players) member.flags = member.flags.filter(flag => !opened.has(flag));
+      if (game.safe === game.cells.length - config.mines) {
+        game.cells = randomBoard(config); game.safe = 0;
+        game.boardVersion = (game.boardVersion ?? 0) + 1;
+        for (const member of game.players) member.flags = [];
+        game.event = { kind: "classicBoard", name: "", id: "" };
+      }
+    }
+    await this.settleClassic();
+    await this.publish();
   }
 
   private addDrawChat(kind: "chat" | "system", name: string, text: string) {
@@ -714,6 +817,10 @@ export class GameRoom extends DurableObject<Env> {
     return this.serialize(async () => {
       await this.init;
       if (!this.ctx.getWebSockets().some(ws => ws.readyState === WebSocket.OPEN)) { this.game = null; await this.ctx.storage.deleteAll(); return; }
+      if (this.game?.config?.rules === "classic" && this.game.phase === "playing") {
+        if (await this.expireClassicPlayers()) await this.publish();
+        else await this.scheduleClassicAlarm();
+      }
       if (this.game?.mode === "draw" && this.game.phase === "playing" && this.game.drawing) {
         if (!(await this.advanceDrawDeadline())) await this.ctx.storage.setAlarm(this.game.drawing.endsAt);
       }
