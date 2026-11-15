@@ -207,3 +207,65 @@ body[data-game="reaction"] .lobby #solo-start { border-radius: 999px; }
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* A single left-side game index anchors all eight themed landing pages. */
+body[data-game] .landing {
+  max-width: none;
+  width: 100%;
+  align-content: start;
+  grid-template: "catalog intro lobby" auto "catalog art lobby" min-content "footer footer footer" auto
+    / minmax(155px, .64fr) minmax(0, 1.55fr) minmax(230px, 1fr);
+}
+body[data-game] .landing .game-gallery { padding: 0; }
+body[data-game] #landing #game-gallery { grid-template-columns: minmax(0, 1fr); }
+body[data-game] .landing .gallery-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+body[data-game] .landing .gallery-icon { flex: 0 0 25px; text-align: center; margin: 0; }
+body[data-game="draw"] .landing,
+body[data-game="sea"] .landing {
+  grid-template-areas: "catalog intro intro" "catalog art lobby" "footer footer footer";
+}
+body[data-game="draw"] .game-art { min-height: clamp(170px, 23vw, 280px); }
+body[data-game="pairs"] .game-art { height: 225px; }
+body[data-game="pairs"] .game-art span { width: min(26%, 82px); }
+body[data-game="cards"] .game-art { width: min(100%, 400px); height: clamp(155px, 19vw, 230px); justify-self: start; }
+body[data-game="cards"] .game-art span { top: 16%; width: clamp(53px, 8vw, 95px); }
+body[data-game="cards"] .game-art span + span { top: 23%; }
+body[data-game="reaction"] .game-art { width: min(100%, 175px); justify-self: start; }
+body[data-game="reaction"] .game-art span:first-child { font-size: clamp(46px, 6vw, 77px); }
+body[data-game="four"] .intro { text-align: left; }
+body[data-game="four"] .game-switch { justify-content: start; }
+body[data-game="four"] .intro > p { margin-inline: 0; }
+body[data-game="four"] .game-art { justify-self: start; width: min(100%, 400px); gap: 0 7px; padding: 7px 12px; }
+
+@media (max-width: 900px) {
+  body[data-game] .landing,
+  body[data-game="draw"] .landing,
+  body[data-game="sea"] .landing {
+    grid-template: "catalog intro" auto "catalog lobby" auto "catalog art" min-content "footer footer" auto
+      / minmax(135px, .36fr) minmax(0, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  body[data-game] .landing,
+  body[data-game="draw"] .landing,
+  body[data-game="sea"] .landing {
+    --layout-gap: 12px;
+    grid-template-columns: 43px minmax(0, 1fr);
+    padding-inline: 0;
+  }
+  body[data-game] .landing .game-gallery h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  body[data-game] .landing .gallery-card { justify-content: center; padding: 4px; font-size: 0; gap: 0; }
+  body[data-game] .landing .gallery-icon { font-size: 19px; }
+  body[data-game] .landing .lobby { padding: 13px; }
+  body[data-game="typing"] .landing .intro { padding: 13px; }
+  body[data-game] .landing h1 { font-size: clamp(28px, 8vw, 42px); }
+  body[data-game="typing"] .landing .intro h1 { font-size: clamp(23px, 7vw, 34px); }
+}
