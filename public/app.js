@@ -91,7 +91,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       $("hero-rules").replaceChildren();
       $("landing-cap").textContent = selectedMode === "cards" ? "2–4 ИГРОКА" : "2 ИГРОКА";
     }
-    for (const card of $("game-gallery").children) card.setAttribute("aria-pressed", String(card.dataset.mode === selectedMode));
+    for (const card of $("game-gallery").querySelectorAll("button[data-mode]")) card.setAttribute("aria-pressed", String(card.dataset.mode === selectedMode));
   }
   let switchingGame = false;
   async function changeGame(direction) {
@@ -1283,7 +1283,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     card.addEventListener("click", () => {
       if (mode !== selectedMode) changeGame(modes.indexOf(mode) - modes.indexOf(selectedMode));
     });
-    $("game-gallery").append(card);
+    $("game-gallery").insertBefore(card, $("zombie-link"));
   }
   applySelectedMode(); document.querySelector(".draw-colors button[data-color='#17201c']")?.classList.add("selected");
   document.addEventListener("keydown", event => { if (event.key === "Escape" && game) teardown(); });

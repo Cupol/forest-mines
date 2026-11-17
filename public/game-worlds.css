@@ -335,3 +335,17 @@ body[data-game="sapper"] #flag-total:read-only { opacity: .8; }
 .room-actions, .winner-actions { flex-wrap: wrap; }
 .winner-actions { display: flex; justify-content: center; gap: 8px; }
 .room-rematch-wait { font-size: 12px; }
+
+.gallery-link {
+  --tile: #c1d183;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+}
+.zombie-status {
+  display: block;
+  margin-bottom: 3px;
+  color: #ff9191;
+  font-size: 11px;
+}
