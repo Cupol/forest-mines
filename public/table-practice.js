@@ -1,5 +1,6 @@
 const HUMAN = "local-table";
 const BOT = "table-bot";
+const COLUMN_ORDER = [3, 2, 4, 1, 5, 0, 6];
 
 function shuffled(count, value = index => index) {
   const items = Array.from({ length: count }, (_, index) => value(index));
@@ -31,7 +32,71 @@ function winningLine(board, cell) {
   return [];
 }
 
-export function createTablePractice(mode, name) {
+const scoringLines = [];
+for (let y = 0; y < 6; y++) for (let x = 0; x < 7; x++) {
+  for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+    const endX = x + 3 * dx, endY = y + 3 * dy;
+    if (endX >= 0 && endX < 7 && endY >= 0 && endY < 6) {
+      scoringLines.push(Array.from({ length: 4 }, (_, i) => (y + i * dy) * 7 + x + i * dx));
+    }
+  }
+}
+function strongestColumn(board, landingCell) {
+  const positions = Array.from({ length: 7 }, (_, column) => landingCell(column));
+  const weights = [0, 2, 12, 42];
+  const win = 100000;
+  function evaluate(id, opponent) {
+    let score = 0;
+    for (let i = 3; i < board.length; i += 7) {
+      if (board[i]) score += board[i] === id ? 5 : -5;
+    }
+    for (const line of scoringLines) {
+      let own = 0, other = 0, available = false;
+      for (const cell of line) {
+        if (board[cell] === id) own++;
+        else if (board[cell] === opponent) other++;
+        else if (positions[cell % 7] === cell) available = true;
+      }
+      if (!other) score += weights[own] + (own === 3 && available ? 90 : 0);
+      if (!own) score -= weights[other] + (other === 3 && available ? 90 : 0);
+    }
+    return score;
+  }
+  function search(id, opponent, depth, alpha, beta) {
+    if (positions.every(cell => cell < 0)) return 0;
+    if (!depth) return evaluate(id, opponent);
+    let best = -Infinity;
+    for (const column of COLUMN_ORDER) {
+      const cell = positions[column];
+      if (cell < 0) continue;
+      board[cell] = id;
+      positions[column] -= 7;
+      const score = winningLine(board, cell).length ? win + depth :
+        -search(opponent, id, depth - 1, -beta, -alpha);
+      board[cell] = "";
+      positions[column] = cell;
+      best = Math.max(best, score);
+      alpha = Math.max(alpha, score);
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+  let choice, best = -Infinity;
+  for (const column of COLUMN_ORDER) {
+    const cell = positions[column];
+    if (cell < 0) continue;
+    board[cell] = BOT;
+    positions[column] -= 7;
+    const score = winningLine(board, cell).length ? win + 7 : -search(HUMAN, BOT, 6, -Infinity, -best);
+    board[cell] = "";
+    positions[column] = cell;
+    if (score > best) { best = score; choice = column; }
+    if (best > win) break;
+  }
+  return choice;
+}
+
+export function createTablePractice(mode, name, difficulty = "normal") {
   const deck = mode === "pairs" ? shuffled(16, index => index % 8) : [];
   const pile = mode === "cards" ? shuffled(52) : [];
   const hands = mode === "cards" ? { [HUMAN]: pile.splice(0, 2), [BOT]: pile.splice(0, 2) } : {};
@@ -40,7 +105,8 @@ export function createTablePractice(mode, name) {
   const table = { board: mode === "four" ? Array(42).fill("") : [], cards: deck.map(() => null),
     found: deck.map(() => ""), turn: HUMAN, latest: -1, line: [], hand: hands[HUMAN], totals: {}, counts: {}, stood: [] };
   const game = { mode, phase: "playing", over: false, winnerId: "", table, players: [
-    { id: HUMAN, name: name || "Ты", online: true }, { id: BOT, name: "Бот", online: true }
+    { id: HUMAN, name: name || "Ты", online: true },
+    { id: BOT, name: mode === "four" && difficulty === "hard" ? "Бот · сложный" : "Бот", online: true }
   ] };
   function finish(winnerId = "") {
     Object.assign(game, { phase: "over", over: true, winnerId });
@@ -103,7 +169,9 @@ export function createTablePractice(mode, name) {
   function botMove() {
     if (mode === "cards") return play(BOT, total(hands[BOT]) >= 17 ? "tableStand" : "tableDraw");
     if (mode === "four") {
-      const columns = [3, 2, 4, 1, 5, 0, 6].filter(column => landingCell(column) >= 0);
+      if (game.over || table.turn !== BOT) return false;
+      if (difficulty === "hard") return play(BOT, "tableMove", strongestColumn(table.board, landingCell));
+      const columns = COLUMN_ORDER.filter(column => landingCell(column) >= 0);
       function threat(id) {
         return columns.find(column => {
           const cell = landingCell(column), board = [...table.board];

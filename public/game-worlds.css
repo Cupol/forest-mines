@@ -364,3 +364,7 @@ body[data-game="sapper"] #flag-total:read-only { opacity: .8; }
 .records-dialog td:nth-child(2){overflow-wrap:anywhere}
 .records-dialog th:last-child,.records-dialog td:last-child{white-space:nowrap}
 @media(max-width:480px){.topbar-actions{gap:7px}.topbar-actions .online-pill{display:none}.records-dialog{padding:14px}.records-dialog th,.records-dialog td{font-size:12px}}
+
+.four-bot-options{display:grid;grid-template-columns:1fr minmax(100px,auto);align-items:center;gap:8px;margin:13px 0 2px}
+.four-bot-options .field-label{margin:0}
+.four-bot-options select{width:100%;border:1px solid #84634f;border-radius:6px;background:#30241f;color:#f3ded1;padding:7px 9px;font:inherit}

@@ -7,9 +7,9 @@
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
   <link rel="stylesheet" href="style.css?v=game-worlds-1">
-  <link rel="stylesheet" href="game-worlds.css?v=11">
+  <link rel="stylesheet" href="game-worlds.css?v=12">
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=records-1"></script>
+  <script type="module" src="app.js?v=four-hard-1"></script>
 </head>
 <body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -37,6 +37,10 @@
         <button id="create-room" class="button button-primary"><span id="create-room-text">Создать комнату</span><span>↗</span></button>
         <div class="divider"><span>или присоединиться</span></div>
         <div class="join-line"><input id="room-code" maxlength="6" placeholder="КОД КОМНАТЫ" aria-label="Код комнаты"><button id="join-room" class="button button-quiet" aria-label="Войти по коду">Войти <span>→</span></button></div>
+        <div id="four-bot-options" class="four-bot-options hidden">
+          <label class="field-label" for="four-bot-level">Сложность бота</label>
+          <select id="four-bot-level"><option value="normal">Обычный</option><option value="hard">Сложный</option></select>
+        </div>
         <button id="solo-start" class="text-button">Сыграть с ботом <span>→</span></button>
         <p class="lobby-error" id="lobby-error" role="alert"></p>
         <aside class="room-guide" aria-labelledby="room-guide-title">

@@ -1,6 +1,6 @@
 import { isFreehand, paintStroke, sampleColor } from "./drawing-tools.js";
 import { TYPING_TEXTS } from "./typing-texts.js";
-import { createTablePractice } from "./table-practice.js";
+import { createTablePractice } from "./table-practice.js?v=four-hard-1";
 import { DRAW_WORDS } from "./draw-words.js";
 import { FLEET, shipCells, canPlace } from "./sea-rules.js";
 
@@ -52,6 +52,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     reaction: "Нажми, когда сигнал станет зелёным. В соло увидишь своё время в миллисекундах."
   };
   function applySelectedMode() {
+    $("four-bot-options").classList.toggle("hidden", selectedMode !== "four");
     $("room-guide-tip").textContent = guideTips[selectedMode];
     const drawing = selectedMode === "draw";
     document.body.dataset.game = selectedMode;
@@ -64,7 +65,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     $("hero-rules").innerHTML = drawing ? "" : "<span><b>⚑</b> личные флажки</span><span><b>✦</b> классика на выбывание</span>";
     $("create-room-text").textContent = drawing ? "Создать комнату рисования" : "Создать комнату";
     $("solo-start").textContent = drawing ? "Попробовать одному →" : "Сыграть с ботом →";
-    if (isTableMode(selectedMode)) $("solo-start").textContent = "Попробовать одному →";
+    if (isTableMode(selectedMode) && selectedMode !== "four") $("solo-start").textContent = "Попробовать одному →";
     $("game-art").replaceChildren(...modeArt(selectedMode));
     if (selectedMode === "sea") {
       document.title = "Морской бой — Круг друзей";
@@ -1119,7 +1120,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   let tablePractice = null;
   function startTablePractice() {
     clearTimeout(botTimer);
-    tablePractice = createTablePractice(selectedMode, ui.name.value.trim());
+    tablePractice = createTablePractice(selectedMode, ui.name.value.trim(), $("four-bot-level").value);
     ({ game, humanId: myId } = tablePractice);
     solo = true;
     roomId = "ПРАКТИКА";
