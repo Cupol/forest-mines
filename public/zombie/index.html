@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#141b16"><title>Зомби: Выживание</title>  <script type="module" crossorigin src="./assets/index-DbKmClEd.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-0y8Eax9B.css">
+</head>
+<body>
+<main>
+  <canvas id="view" aria-label="Трёхмерный мир"></canvas>
+  <section id="menu" class="sheet"><div class="kicker">КООПЕРАТИВНОЕ ВЫЖИВАНИЕ</div><h1>Зомби<span>Выживание</span></h1>
+    <p>Обыщи город. Укрепи убежище до темноты.</p>
+    <label for="nickname">Имя выжившего</label><input id="nickname" maxlength="20" placeholder="Выживший" autocomplete="nickname">
+    <div class="menu-actions"><button id="solo">Играть одному</button><button id="create" class="quiet">Создать комнату</button></div>
+    <form id="join"><input id="code" aria-label="Код комнаты" maxlength="6" placeholder="Код комнаты" autocomplete="off"><button class="quiet">Подключиться</button></form>
+    <p id="error" role="status"></p>
+    <a id="catalog-link" href="../" hidden>← Все игры</a>
+  </section>
+  <section id="hud" hidden>
+    <header><div><span class="kicker" id="session"></span><button id="copy" class="quiet" hidden>Копировать код</button></div><button class="quiet" id="full">На весь экран</button></header>
+    <div id="aim" aria-hidden="true">+</div>
+    <div id="allies"></div>
+    <footer><div class="meters"><div>Здоровье <meter id="health" min="0" max="100" value="100"></meter></div><div>Выносливость <meter id="stamina" min="0" max="100" value="100"></meter></div><div id="supplies"></div></div>
+      <p>WASD · движение &nbsp; Shift · бег &nbsp; Ctrl · присесть &nbsp; ЛКМ · удар &nbsp; E · подобрать &nbsp; B · баррикада &nbsp; I · инвентарь &nbsp; F · фонарь</p>
+    </footer>
+  </section>
+  <section id="pause" class="sheet panel" hidden><h2>Выживание</h2><p id="pause-message"></p><button id="resume">Продолжить</button><button id="leave" class="quiet">В главное меню</button></section>
+  <section id="inventory" class="sheet panel" hidden><h2>Инвентарь</h2><p id="items"></p><button id="heal">Использовать аптечку</button><button id="close-inventory" class="quiet">Вернуться в игру</button></section>
+</main>
+</body></html>
