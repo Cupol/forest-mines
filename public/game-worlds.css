@@ -349,3 +349,18 @@ body[data-game="sapper"] #flag-total:read-only { opacity: .8; }
   color: #ff9191;
   font-size: 11px;
 }
+
+.topbar-actions{display:flex;align-items:center;gap:14px}
+.topbar-actions .button{min-height:32px;padding:7px 11px;white-space:nowrap}
+.records-dialog{width:min(640px,calc(100vw - 26px));max-height:85vh;padding:22px;color:#e6ece4;background:#1a2520;border:1px solid #56675b;overflow:auto}
+.records-dialog::backdrop{background:#0a100dc9}
+.records-heading{display:flex;gap:12px;justify-content:space-between;align-items:center}
+.records-heading h2{margin:0;font:500 clamp(22px,5vw,31px) var(--serif)}
+.records-dialog p{font:14px/1.45 var(--sans);color:#c5d0c4}
+.records-dialog label{display:block;margin-bottom:6px;font-size:13px}
+.records-dialog select{width:100%;padding:9px 10px;border:1px solid #56675b;border-radius:4px;background:#111915;color:#f0f2eb;font:14px var(--sans)}
+.records-dialog table{width:100%;border-collapse:collapse;font-size:14px}
+.records-dialog th,.records-dialog td{text-align:left;padding:9px 5px;border-bottom:1px solid #405147}
+.records-dialog td:nth-child(2){overflow-wrap:anywhere}
+.records-dialog th:last-child,.records-dialog td:last-child{white-space:nowrap}
+@media(max-width:480px){.topbar-actions{gap:7px}.topbar-actions .online-pill{display:none}.records-dialog{padding:14px}.records-dialog th,.records-dialog td{font-size:12px}}

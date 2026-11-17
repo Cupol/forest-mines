@@ -1,17 +1,24 @@
 import { DurableObject } from "cloudflare:workers";
 import { DRAW_WORDS } from "../../public/draw-words.js";
 import { validFleet } from "../../public/sea-rules.js";
+import { Leaderboard } from "./leaderboard";
+export { Leaderboard };
 
 const DEFAULT_CONFIG: GameConfig = { width: 16, height: 16, mines: 33, flags: 17 };
 const MAX_PLAYERS = 20;
 const KEY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#f39a5e", "#65d2bb", "#df8add", "#a9bdff", "#d2dc72", "#ff8580", "#80d8e8", "#ffc978", "#90b8f0", "#c2dc85", "#eea7c7", "#70d5a0", "#e8a567", "#9e9cf2", "#c7d0da"];
 
-interface Env { ROOMS: DurableObjectNamespace<GameRoom>; ASSETS: Fetcher }
+interface Env { ROOMS: DurableObjectNamespace<GameRoom>; RECORDS: DurableObjectNamespace<Leaderboard>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number; rules?: "classic" | "points" }
 import { TYPING_TEXTS } from "../../public/typing-texts.js";
 
 type GameMode = "sapper" | "draw" | "sea" | "typing" | "four" | "pairs" | "cards" | "reaction";
+const RECORD_MODES = new Set<string>(["sapper","draw","sea","typing","four","pairs","cards","reaction"]);
+async function profileHash(token:string) {
+  const bytes=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(token)));
+  return Array.from(bytes,byte=>byte.toString(16).padStart(2,"0")).join("");
+}
 interface CardGame { order: string[]; hands: Record<string, number[]>; pile: number[]; stood: string[] }
 interface TableGame { turn: string; board: string[]; deck: number[]; found: string[]; open: number[]; latest: number; line: number[]; cards?: CardGame; reaction?: ReactionRound }
 interface ReactionRound { signalAt: number; ready: boolean; elapsed: number | null; early: string }
@@ -71,12 +78,12 @@ interface SeaGame {
   turn: string;
 }
 interface Cell { mine: boolean; near: number; open: boolean; boom: boolean; by: string }
-interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean; eliminated?: "mine" | "idle"; moveBy?: number; classicOpened?: boolean }
+interface Player { id: string; token: string; name: string; score: number; explosions: number; color: string; flags: number[]; online: boolean; eliminated?: "mine" | "idle"; moveBy?: number; classicOpened?: boolean; recordProfile?: string }
 const STROKE_TOOLS = ["pen", "line", "eraser", "fill", "square", "circle", "rect", "ellipse"] as const;
 interface Stroke { color: string; size: number; tool?: (typeof STROKE_TOOLS)[number]; opacity?: number; points: { x: number; y: number }[] }
 interface ChatLine { id: string; kind: "chat" | "system"; name: string; text: string; at: number }
 interface Drawing { round: number; roundsTotal: number; drawerId: string; word: string; stage: "choosing" | "drawing"; choices: string[]; offeredWords?: string[]; revealedIndices: number[]; turnOrder: string[]; startedAt: number; endsAt: number; strokes: Stroke[]; guessedPlayers: string[] }
-interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; boardVersion?: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; table?: TableGame; typing?: TypingRace; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null }
+interface Game { mode?: GameMode; config: GameConfig | null; cells: Cell[]; players: Player[]; safe: number; boardVersion?: number; phase: "lobby" | "playing" | "over"; hostId: string; over: boolean; winnerId?: string; drawing?: Drawing; sea?: SeaGame; table?: TableGame; typing?: TypingRace; chat?: ChatLine[]; event: { kind: string; name: string; id: string } | null; recordMatch?: string; recordSaved?: boolean }
 interface Identity { id: string; name: string }
 
 function normalizeWord(value: unknown): string { return String(value ?? "").toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^а-яa-z0-9]+/g, ""); }
@@ -178,6 +185,13 @@ function stripSecrets(game: Game, me: Player) {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if(url.pathname==="/api/records"){
+      const mode=url.searchParams.get("game")??"";
+      if(request.method!=="GET")return new Response(null,{status:405,headers:{Allow:"GET"}});
+      if(!RECORD_MODES.has(mode))return new Response(null,{status:400});
+      const records=env.RECORDS.get(env.RECORDS.idFromName(mode));
+      return Response.json(await records.top(mode),{headers:{"Access-Control-Allow-Origin":"*","Cache-Control":"no-store"}});
+    }
     const match = url.pathname.match(/^\/api\/room\/([A-Z0-9]{4,6})$/i);
     if (match) {
       if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("WebSocket connection required", { status: 426 });
@@ -264,8 +278,9 @@ export class GameRoom extends DurableObject<Env> {
         if (host?.id !== attachment.id) return;
         const lobby = freshGame(this.game.mode);
         lobby.hostId = host.id;
-        lobby.players = online.map(({ id, token, name, color }) => ({
-          id, token, name, color, online: true, score: 0, explosions: 0, flags: [],
+        await this.recordResult();
+        lobby.players = online.map(({ id, token, name, color, recordProfile }) => ({
+          id, token, name, color, recordProfile, online: true, score: 0, explosions: 0, flags: [],
         }));
         await this.ctx.storage.deleteAlarm();
         this.game = lobby;
@@ -443,6 +458,8 @@ export class GameRoom extends DurableObject<Env> {
     while (nextRound <= drawing.roundsTotal && !this.game.players.some(player => player.id === drawing.turnOrder[nextRound - 1] && player.online)) nextRound++;
     if (nextRound > drawing.roundsTotal) {
       this.game.phase = "over"; this.game.over = true; drawing.endsAt = 0; drawing.choices = [];
+      const ranked=this.game.players.filter(player=>drawing.turnOrder.includes(player.id)).sort((a,b)=>b.score-a.score);
+      this.game.winnerId=ranked[0]?.score>0&&ranked[0].score!==ranked[1]?.score?ranked[0].id:"";
       this.addDrawChat("system", "Комната", "Все раунды завершены. Итоги — в списке игроков.");
       this.game.event = { kind: "drawFinished", name: "", id: "" };
       await this.ctx.storage.deleteAlarm(); await this.publish(); return;
@@ -786,6 +803,9 @@ export class GameRoom extends DurableObject<Env> {
       player.name = name; player.online = true; player.flags ??= []; player.explosions ??= 0; if (!player.color) player.color = PLAYER_COLORS[this.game.players.indexOf(player) % PLAYER_COLORS.length]; if (this.game.mode !== "draw" && !this.game.over) player.score = 0;
     }
     socket.serializeAttachment({ id, name } satisfies Identity);
+    if(!player.recordProfile&&typeof packet.recordToken==="string"&&/^[\w-]{24,100}$/.test(packet.recordToken)){
+      player.recordProfile=await profileHash(packet.recordToken);
+    }
     if (this.game.mode === "draw" && this.game.phase === "playing" && this.game.drawing) {
       if (await this.advanceDrawDeadline()) return;
       await this.ctx.storage.setAlarm(this.game.drawing.endsAt);
@@ -805,13 +825,35 @@ export class GameRoom extends DurableObject<Env> {
   }
   private async publish() {
     if (!this.game) return;
+    if(this.game.phase==="playing"&&!this.game.recordMatch&&this.game.players.filter(p=>p.online).length>=2){
+      this.game.recordMatch=crypto.randomUUID();
+    }
     await this.ctx.storage.put("game", this.game);
+    await this.recordResult();
     for (const socket of this.ctx.getWebSockets()) {
       const identity = socket.deserializeAttachment() as Identity | null;
       const player = identity?.id ? this.game.players.find(p => p.id === identity.id) : null;
       if (!player) continue;
       try { const state = stripSecrets(this.game, player); state.room = this.roomCode; socket.send(JSON.stringify(state)); } catch { /* socket closed between event and broadcast */ }
     }
+  }
+
+  private async recordResult(){
+    const game=this.game;
+    if(!game||game.phase!=="over"||game.recordSaved||!game.recordMatch||!game.winnerId)return;
+    const winner=game.players.find(player=>player.id===game.winnerId);
+    if(!winner)return;
+    const mode=game.mode??"sapper";
+    const elapsed=game.table?.reaction?.elapsed;
+    const speed=game.typing?typingResults(game.typing,game.typing.endsAt).find(p=>p.id===winner.id)?.speed:undefined;
+    const best=mode==="reaction"&&typeof elapsed==="number"?Math.max(1,Math.round(elapsed)):
+      mode==="typing"&&typeof speed==="number"?Math.round(speed):null;
+    try{
+      const records=this.env.RECORDS.get(this.env.RECORDS.idFromName(mode));
+      await records.award(game.recordMatch,winner.recordProfile??await profileHash(winner.token),winner.name,best,mode==="reaction");
+      game.recordSaved=true;
+      await this.ctx.storage.put("game",game);
+    }catch(error){console.error("Could not record match",game.recordMatch,error);}
   }
 
   webSocketClose(socket: WebSocket) { return this.serialize(async () => { await this.removePlayer(socket); }); }

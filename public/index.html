@@ -7,16 +7,16 @@
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
   <link rel="stylesheet" href="style.css?v=game-worlds-1">
-  <link rel="stylesheet" href="game-worlds.css?v=10">
+  <link rel="stylesheet" href="game-worlds.css?v=11">
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=zombie-1"></script>
+  <script type="module" src="app.js?v=records-1"></script>
 </head>
 <body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
   <main class="shell">
     <header class="topbar">
       <a class="brand" href="./" aria-label="На главную"><span class="brand-icon">✦</span><span>КРУГ ДРУЗЕЙ<small>ИГРАЕМ ВМЕСТЕ</small></span></a>
-      <div class="online-pill"><i></i><span id="connection-label">ОДИНОЧНЫЙ РЕЖИМ</span></div>
+      <div class="topbar-actions"><button id="records-open" class="button button-quiet">Рекорды</button><div class="online-pill"><i></i><span id="connection-label">ОДИНОЧНЫЙ РЕЖИМ</span></div></div>
     </header>
 
     <section class="landing" id="landing">
@@ -179,6 +179,17 @@
         <div class="winner-actions"><button id="winner-rematch" class="button button-primary hidden">Сыграть ещё</button><button id="winner-close" class="button button-quiet">Посмотреть поле</button></div>
       </section>
     </div>
+    <dialog id="records" class="card records-dialog" aria-labelledby="records-title">
+      <div class="records-heading"><h2 id="records-title">Таблица рекордов</h2><form method="dialog"><button class="icon-button" aria-label="Закрыть таблицу">×</button></form></div>
+      <p>Победы в сетевых партиях. В таблице показывается имя игрока.</p>
+      <label for="records-game">Игра</label>
+      <select id="records-game"></select>
+      <p id="records-status" role="status"></p>
+      <table id="records-table" hidden>
+        <thead><tr><th scope="col">Место</th><th scope="col">Игрок</th><th scope="col">Победы</th><th scope="col" id="records-best"></th></tr></thead>
+        <tbody id="records-rows"></tbody>
+      </table>
+    </dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </main>
 </body>

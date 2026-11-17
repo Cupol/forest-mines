@@ -117,6 +117,8 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   function notify(message) { ui.toast.textContent = message; ui.toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => ui.toast.classList.remove("show"), 2600); }
   function setStatus(message, mood = "") { ui.status.lastElementChild.textContent = message; ui.status.classList.toggle("hit", mood === "hit"); ui.status.classList.toggle("found", mood === "found"); }
   function newId() { return crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`; }
+  const recordToken=localStorage.getItem("circle-record-profile")||newId()+newId();
+  localStorage.setItem("circle-record-profile",recordToken);
   function cleanName() {
     const value = ui.name.value.trim().replace(/[<>\u0000-\u001f]/g, "").slice(0, 20);
     if (!value) { showError("Напиши имя смотрителя — хотя бы одно слово."); ui.name.focus(); return ""; }
@@ -205,7 +207,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     try {
       socket = new WebSocket(`${protocol}//${host}/api/room/${encodeURIComponent(roomId)}?create=${makeNew ? "1" : "0"}&game=${selectedMode}`);
     } catch (_) { [$("create-room"), $("join-room")].forEach(b => b.disabled = false); showError("Не удалось открыть соединение. Проверь адрес сервера."); return; }
-    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "join", id: myId, token: myToken, name, create: makeNew, mode: selectedMode })));
+    socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "join", id: myId, token: myToken, recordToken, name, create: makeNew, mode: selectedMode })));
     socket.addEventListener("message", event => {
       let message; try { message = JSON.parse(event.data); } catch (_) { return; }
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
@@ -1285,8 +1287,40 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     });
     $("game-gallery").insertBefore(card, $("zombie-link"));
   }
+  const records=$("records"),recordMode=$("records-game"),recordStatus=$("records-status");
+  for(const [mode,item] of Object.entries(catalog))recordMode.add(new Option(item.name,mode));
+  let recordRequest;
+  async function showRecords(){
+    recordRequest?.abort();
+    const request=new AbortController();recordRequest=request;
+    const mode=recordMode.value,table=$("records-table"),rows=$("records-rows"),best=$("records-best");
+    const measure=mode==="reaction"?"Лучшее время":mode==="typing"?"Лучшая скорость":"";
+    table.hidden=true;rows.replaceChildren();best.hidden=!measure;best.textContent=measure;
+    recordStatus.textContent="Загружаем результаты…";
+    try{
+      const address=(window.MINES_CONFIG?.api||location.origin).replace(/\/$/,"");
+      const response=await fetch(`${address}/api/records?game=${encodeURIComponent(mode)}`,{signal:request.signal});
+      if(!response.ok)throw new Error("Records unavailable");
+      const list=await response.json();
+      if(request.signal.aborted)return;
+      for(const [index,entry] of list.entries()){
+        const row=rows.insertRow();
+        for(const value of [index+1,entry.name,entry.wins])row.insertCell().textContent=value;
+        if(measure)row.insertCell().textContent=entry.best==null?"—":`${entry.best} ${mode==="reaction"?"мс":"зн./мин"}`;
+      }
+      table.hidden=!list.length;
+      recordStatus.textContent=list.length?"":"Здесь пока нет побед. Сыграйте сетевую партию.";
+    }catch(error){
+      if(!request.signal.aborted)recordStatus.textContent="Не удалось загрузить рекорды. Открой таблицу ещё раз.";
+    }
+  }
+  $("records-open").addEventListener("click",()=>{
+    recordMode.value=selectedMode;records.showModal();showRecords();
+  });
+  recordMode.addEventListener("change",showRecords);
+  records.addEventListener("close",()=>recordRequest?.abort());
   applySelectedMode(); document.querySelector(".draw-colors button[data-color='#17201c']")?.classList.add("selected");
-  document.addEventListener("keydown", event => { if (event.key === "Escape" && game) teardown(); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape" && game && !records.open) teardown(); });
   window.addEventListener("beforeunload", () => { if (socket) socket.close(); });
   if (savedRoom) { ui.connection.textContent = "КОМНАТА ДРУЗЬЕЙ"; }
 })();
