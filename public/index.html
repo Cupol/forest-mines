@@ -7,9 +7,9 @@
   <meta name="description" content="Круг друзей — сапёр и игра «Рисуй и угадывай» в общих комнатах">
   <title>Круг друзей — игры вместе</title>
   <link rel="stylesheet" href="style.css?v=game-worlds-1">
-  <link rel="stylesheet" href="game-worlds.css?v=7">
+  <link rel="stylesheet" href="game-worlds.css?v=8">
   <script src="config.js"></script>
-  <script type="module" src="app.js?v=classic-sapper-3"></script>
+  <script type="module" src="app.js?v=rematch-1"></script>
 </head>
 <body data-game="sapper">
   <div class="forest-sky" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -51,8 +51,8 @@
 
     <section class="game hidden" id="game">
       <header class="game-head card">
-        <div class="game-title"><div class="eyebrow">КОМНАТА <span id="room-label">#----</span></div><h2 id="game-heading">Ожидаем игроков</h2></div>
-        <div class="head-actions"><button id="copy-link" class="button button-quiet">Пригласить ↗</button><button id="leave-room" class="icon-button" aria-label="Вернуться в меню">×</button></div>
+        <div class="game-title"><h2 id="game-heading">Ожидаем игроков</h2><div id="room-code-display" class="room-code-display hidden"><span>Код комнаты</span> <strong id="room-label"></strong></div></div>
+        <div class="head-actions room-actions"><button id="room-rematch" class="button button-primary hidden">Сыграть ещё</button><span id="room-rematch-wait" class="room-rematch-wait hidden">Ждём решения ведущего</span><button id="copy-link" class="button button-quiet">Пригласить ↗</button><button id="leave-room" class="icon-button" aria-label="Вернуться в меню">×</button></div>
       </header>
       <section id="room-setup" class="room-setup hidden">
         <div class="room-setup-card card">
@@ -176,7 +176,7 @@
         <div class="winner-seal" aria-hidden="true">✦</div>
         <h2 id="winner-title">Победитель</h2>
         <p id="winner-message"></p>
-        <button id="winner-close" class="button button-primary">Посмотреть поле</button>
+        <div class="winner-actions"><button id="winner-rematch" class="button button-primary hidden">Сыграть ещё</button><button id="winner-close" class="button button-quiet">Посмотреть поле</button></div>
       </section>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

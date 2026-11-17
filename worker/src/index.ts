@@ -257,6 +257,21 @@ export class GameRoom extends DurableObject<Env> {
       if (packet.type === "join") { await this.join(socket, packet); return; }
       if (!this.game) return;
       if (!attachment?.id || !this.game.players.some(p => p.id === attachment.id)) return;
+      if (packet.type === "rematch") {
+        if (this.game.phase !== "over") return;
+        const online = this.game.players.filter(player => player.online);
+        const host = online.find(player => player.id === this.game!.hostId) ?? online[0];
+        if (host?.id !== attachment.id) return;
+        const lobby = freshGame(this.game.mode);
+        lobby.hostId = host.id;
+        lobby.players = online.map(({ id, token, name, color }) => ({
+          id, token, name, color, online: true, score: 0, explosions: 0, flags: [],
+        }));
+        await this.ctx.storage.deleteAlarm();
+        this.game = lobby;
+        await this.publish();
+        return;
+      }
       if (isTableMode(this.game.mode)) { await this.handleTablePacket(attachment.id, packet); return; }
       if (this.game.mode === "sea") { await this.handleSeaPacket(attachment.id, packet); return; }
       if (this.game.mode === "typing") { await this.handleTypingPacket(attachment.id, packet); return; }

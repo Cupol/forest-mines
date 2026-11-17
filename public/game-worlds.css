@@ -318,3 +318,20 @@ body[data-game="sapper"] #sapper-rules {
   font: 500 13px var(--sans);
 }
 body[data-game="sapper"] #flag-total:read-only { opacity: .8; }
+
+.room-code-display {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  color: inherit;
+  font-size: 12px;
+}
+.room-code-display strong {
+  font: 700 18px var(--mono);
+  letter-spacing: .12em;
+}
+.room-actions, .winner-actions { flex-wrap: wrap; }
+.winner-actions { display: flex; justify-content: center; gap: 8px; }
+.room-rematch-wait { font-size: 12px; }

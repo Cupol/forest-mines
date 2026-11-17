@@ -154,7 +154,8 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     document.body.dataset.game = selectedMode;
     ui.landing.classList.add("hidden"); ui.game.classList.remove("hidden");
     ui.connection.textContent = mode === "solo" ? "ОДИНОЧНЫЙ РЕЖИМ · БОТ" : mode === "online" ? "В СЕТИ · LIVE" : mode === "draw" ? "ПРАКТИКА РИСОВАНИЯ" : "КОМНАТА ГОТОВА";
-    ui.room.textContent = "#" + roomId; ui.shareCode.textContent = roomId; history.replaceState({}, "", `?room=${encodeURIComponent(roomId)}&game=${selectedMode}`);
+    $("room-code-display").classList.toggle("hidden", mode !== "online");
+    ui.room.textContent = roomId; ui.shareCode.textContent = roomId; history.replaceState({}, "", `?room=${encodeURIComponent(roomId)}&game=${selectedMode}`);
   }
   function apiAddress() {
     const raw = window.MINES_CONFIG && window.MINES_CONFIG.api;
@@ -210,6 +211,12 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
       if (message.type === "error") { showError(message.message || "Сервер отклонил вход."); teardown(false); return; }
       if (message.type === "notice") { if (selectedMode === "draw") ui.drawLobbyError.textContent = message.text || "Действие недоступно."; else if (game?.phase === "lobby" && selectedMode === "sapper") $("setup-error").textContent = message.text; else setStatus(message.text || "Действие недоступно.", "hit"); return; }
       if (message.type === "state") {
+        if (game?.phase === "over" && message.phase === "lobby") {
+          winnerDismissed = false; ui.winnerOverlay.classList.add("hidden");
+          seaDraft = FLEET.map(() => null); seaSelected = 0; seaVertical = false;
+          clearTimeout(typingFlush); typingFlush = 0; typingRound = 0; typingEdits = []; typingInput.value = "";
+          activeStroke = null; flagMode = false; ui.flagMode.setAttribute("aria-pressed", "false");
+        }
         selectedMode = modes.includes(message.mode) ? message.mode : "sapper";
         game = { mode: selectedMode, cells: message.cells, players: message.players, config: message.config, phase: message.phase, hostId: message.hostId, safe: message.safe, over: message.over, winnerId: message.winnerId || "", drawing: message.drawing, chat: message.chat || [] };
         game.boardVersion = message.boardVersion ?? 0;
@@ -645,6 +652,13 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
 
   function draw() {
     if (!game) return;
+    const finishedOnline = !solo && game.phase === "over";
+    const online = game.players.filter(player => player.online);
+    const host = online.find(player => player.id === game.hostId) ?? online[0];
+    const canRematch = finishedOnline && host?.id === myId;
+    $("room-rematch").classList.toggle("hidden", !canRematch);
+    $("winner-rematch").classList.toggle("hidden", !canRematch);
+    $("room-rematch-wait").classList.toggle("hidden", !finishedOnline || canRematch);
     $("table-dashboard").classList.toggle("hidden", !isTableMode(game.mode));
     $("sea-dashboard").classList.toggle("hidden", game.mode !== "sea");
     $("typing-dashboard").classList.toggle("hidden", game.mode !== "typing");
@@ -1088,6 +1102,13 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
   ui.drawCanvas.addEventListener("pointercancel", () => { activeStroke = null; activePointerId = null; renderDrawingCanvas(); });
   ui.drawCanvas.addEventListener("contextmenu", event => event.preventDefault());
   $("winner-close").addEventListener("click", () => { winnerDismissed = true; ui.winnerOverlay.classList.add("hidden"); });
+  for (const id of ["room-rematch", "winner-rematch"]) {
+    $(id).addEventListener("click", () => {
+      if (!solo && game?.phase === "over" && socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "rematch" }));
+      }
+    });
+  }
   ui.roomInput.addEventListener("input", () => { ui.roomInput.value = ui.roomInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6); });
   $("leave-room").addEventListener("click", () => teardown());
   $("copy-link").addEventListener("click", async () => { const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(roomId)}&game=${selectedMode}`; try { await navigator.clipboard.writeText(link); notify("Ссылка на комнату скопирована"); } catch (_) { notify(`Код комнаты: ${roomId}`); } });
