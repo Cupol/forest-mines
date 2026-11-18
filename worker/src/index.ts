@@ -187,11 +187,7 @@ function stripSecrets(game: Game, me: Player) {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const arena = url.pathname.match(/^\/api\/arena\/([A-Z0-9]{6})$/i);
-    if(arena){
-      if(request.headers.get("Upgrade")?.toLowerCase()!=="websocket")return new Response("WebSocket connection required",{status:426});
-      return env.ARENAS.get(env.ARENAS.idFromName(arena[1].toUpperCase())).fetch(request);
-    }
+    if(/^\/(?:api\/)?arena(?:\/|$)/i.test(url.pathname))return new Response(null,{status:410});
     if(url.pathname==="/api/records"){
       const mode=url.searchParams.get("game")??"";
       if(request.method!=="GET")return new Response(null,{status:405,headers:{Allow:"GET"}});
