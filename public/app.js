@@ -1286,7 +1286,7 @@ import { FLEET, shipCells, canPlace } from "./sea-rules.js";
     card.addEventListener("click", () => {
       if (mode !== selectedMode) changeGame(modes.indexOf(mode) - modes.indexOf(selectedMode));
     });
-    $("game-gallery").insertBefore(card, $("zombie-link"));
+    $("game-gallery").insertBefore(card, $("arena-link"));
   }
   const records=$("records"),recordMode=$("records-game"),recordStatus=$("records-status");
   for(const [mode,item] of Object.entries(catalog))recordMode.add(new Option(item.name,mode));
