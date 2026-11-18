@@ -1,4 +1,4 @@
-import { maps, shop, width, height } from "./maps.js";
+import { maps, shop, width, height } from "./maps.js?v=3";
 
 const $=id=>document.getElementById(id);
 const canvas=$("field"),ctx=canvas.getContext("2d");

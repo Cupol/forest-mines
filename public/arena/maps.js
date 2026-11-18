@@ -6,8 +6,8 @@ export const maps = [
   {name:"Литейная", color:"#ad847e", walls:[[150,0,52,180],[150,280,52,80],[150,460,52,180],[290,120,145,55],[290,450,145,55],[315,267,94,106],[502,0,52,145],[502,490,52,150],[560,267,94,106],[654,115,155,55],[654,460,155,55],[770,270,48,100]]}
 ];
 export const shop = {
-  pulse: {name:"Импульс", cost:0, damage:25, cooldown:420, reach:340},
-  burst: {name:"Очередь", cost:550, damage:18, cooldown:185, reach:300},
-  beam: {name:"Луч", cost:950, damage:42, cooldown:520, reach:490},
+  pulse: {name:"Glock-18", cost:0, damage:25, cooldown:420, reach:340},
+  burst: {name:"MP5", cost:550, damage:18, cooldown:185, reach:300},
+  beam: {name:"AWP", cost:950, damage:42, cooldown:520, reach:490},
   armor: {name:"Щит", cost:400}
 };
