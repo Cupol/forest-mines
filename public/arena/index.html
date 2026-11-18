@@ -8,8 +8,8 @@
 <section id="entry" class="panel">
 <p>Командная арена с видом сверху для 2–8 игроков. Матч до четырёх победных раундов.</p>
 <label>Имя <input id="name" maxlength="20" placeholder="Игрок"></label>
-<button id="create">Создать комнату</button>
-<form id="join"><label>Код комнаты <input id="code" maxlength="6" required autocomplete="off"></label><button>Войти</button></form>
+<button id="create" disabled>Создать комнату</button>
+<form id="join"><label>Код комнаты <input id="code" maxlength="6" required autocomplete="off"></label><button id="join-button" disabled>Войти</button></form>
 </section>
 <section id="room" hidden>
 <div class="bar panel"><div>Комната <strong id="room-code"></strong></div><button id="copy">Пригласить</button><button id="leave">Выйти</button></div>
@@ -24,5 +24,5 @@
 <div class="bar info"><strong id="hp"></strong><span>WASD или стрелки · движение　 Мышь · прицел　 ЛКМ · стрелять</span></div>
 </div>
 </section>
-</main><script src="../config.js"></script><script type="module" src="./app.js"></script></body>
+</main><script src="../config.js"></script><script type="module" src="./app.js?v=2"></script></body>
 </html>

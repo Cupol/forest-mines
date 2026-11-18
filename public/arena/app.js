@@ -129,3 +129,5 @@ setInterval(()=>{
   const dx=cursor.x-p.x,dy=cursor.y-p.y,norm=Math.max(1,Math.hypot(dx,dy));
   send({type:"input",x:axis("KeyD","KeyA","ArrowRight","ArrowLeft"),y:axis("KeyS","KeyW","ArrowDown","ArrowUp"),ax:dx/norm,ay:dy/norm,fire});
 },50);
+$("create").disabled=false;
+$("join-button").disabled=false;
