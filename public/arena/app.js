@@ -5,7 +5,9 @@ const canvas=$("field"),ctx=canvas.getContext("2d");
 const colors=["#72d8cd","#ffc178"];
 const keys=new Set();
 const cursor={x:width/2,y:height/2};
-let socket,state,room="",fire=false,pending=false;
+let socket,state,room="",fire=false,pending=false,aimPointer=null,movePointer=null;
+const joystick=$("joystick"),stick=$("stick");
+const movement={x:0,y:0};
 $("name").value=localStorage.getItem("arena-name")||"";
 $("code").value=new URLSearchParams(location.search).get("room")||"";
 maps.forEach((map,i)=>$("map").add(new Option(map.name,i)));
@@ -17,12 +19,13 @@ for(const [id,item] of Object.entries(shop)){
   $("shop").append(button);
 }
 function send(message){if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify(message));}
-function connect(code,create){
+function connect(code,create,solo=false){
   if(pending||socket)return;
   const address=new URL(window.MINES_CONFIG?.api||location.origin);
   address.protocol=address.protocol==="https:"?"wss:":"ws:";
   address.pathname="/api/arena/"+code;
   if(create)address.searchParams.set("create","1");
+  if(solo)address.searchParams.set("solo","1");
   const peer=new WebSocket(address);socket=peer;pending=true;
   $("status").textContent="Подключаемся…";
   peer.onopen=()=>{
@@ -30,23 +33,25 @@ function connect(code,create){
     const name=$("name").value.trim();localStorage.setItem("arena-name",name);
     send({type:"name",name});
     $("entry").hidden=true;$("room").hidden=false;$("room-code").textContent=code;$("status").textContent="";
-    history.replaceState({}, "", "?room="+code);
+    history.replaceState({}, "",solo?location.pathname:"?room="+code);
   };
   peer.onmessage=event=>{
     if(socket!==peer)return;
     const next=JSON.parse(event.data);
-    if(state?.phase!==next.phase){keys.clear();fire=false;}
+    if(state?.phase!==next.phase)resetInput();
     state=next;update();
   };
   peer.onclose=()=>{
     if(socket!==peer)return;
-    socket=null;state=null;pending=false;fire=false;keys.clear();
+    socket=null;state=null;pending=false;resetInput();
     $("entry").hidden=false;$("room").hidden=true;
     $("status").textContent=room?"Соединение закрыто.":"Комната недоступна. Проверь код или создай новую.";
     room="";
   };
 }
-$("create").onclick=()=>connect(Array.from(crypto.getRandomValues(new Uint8Array(6)),n=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[n%32]).join(""),true);
+const roomCode=()=>Array.from(crypto.getRandomValues(new Uint8Array(6)),n=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[n%32]).join("");
+$("create").onclick=()=>connect(roomCode(),true);
+$("solo").onclick=()=>connect(roomCode(),true,true);
 $("join").onsubmit=event=>{
   event.preventDefault();
   const code=$("code").value.trim().toUpperCase();
@@ -61,11 +66,12 @@ $("leave").onclick=()=>{room="";socket?.close();history.replaceState({}, "", loc
 $("map").onchange=()=>send({type:"map",index:Number($("map").value)});
 $("start").onclick=$("again").onclick=()=>send({type:"start"});
 function update(){
-  const {phase,me,host,players,map,points,round,result}=state,own=players.find(p=>p.id===me);
+  const {phase,solo,me,host,players,map,points,round,result}=state,own=players.find(p=>p.id===me);
   if(!own)return;
   $("lobby").hidden=phase!=="lobby";$("match").hidden=phase==="lobby";
   $("map").value=map;$("map").disabled=me!==host;
-  $("players").textContent="В комнате "+players.length+" / 8 · "+players.map(p=>p.name).join(", ")+(result&&phase==="lobby"?" · "+result:"");
+  $("room-label").hidden=solo;$("copy").hidden=solo;$("solo-label").hidden=!solo;
+  $("players").textContent=solo?"Соперник: бот":"В комнате "+players.length+" / 8 · "+players.map(p=>p.name).join(", ")+(result&&phase==="lobby"?" · "+result:"");
   $("start").disabled=me!==host||players.length<2;
   $("score").textContent=points[0]+" : "+points[1];
   $("round").textContent="Раунд "+round+" · "+maps[map].name;
@@ -112,22 +118,55 @@ window.addEventListener("keydown",e=>{
   e.preventDefault();keys.add(e.code);
 });
 window.addEventListener("keyup",e=>keys.delete(e.code));
-window.addEventListener("blur",()=>{keys.clear();fire=false;});
+function resetInput(){
+  keys.clear();fire=false;aimPointer=null;movePointer=null;
+  movement.x=movement.y=0;stick.style.transform="";
+}
+window.addEventListener("blur",resetInput);
+document.addEventListener("visibilitychange",()=>{if(document.hidden)resetInput();});
 function point(e){
   const r=canvas.getBoundingClientRect(),scale=Math.min(r.width/width,r.height/height);
   cursor.x=(e.clientX-r.left-(r.width-width*scale)/2)/scale;
   cursor.y=(e.clientY-r.top-(r.height-height*scale)/2)/scale;
 }
-canvas.addEventListener("pointermove",point);
-canvas.addEventListener("pointerdown",e=>{if(e.button===0){point(e);fire=true;}});
-window.addEventListener("pointerup",()=>fire=false);
-setInterval(()=>{
+canvas.addEventListener("pointermove",e=>{if(e.pointerType==="mouse"||e.pointerId===aimPointer)point(e);});
+canvas.addEventListener("pointerdown",e=>{
+  if(e.button!==0||state?.phase!=="live"||aimPointer!==null)return;
+  e.preventDefault();canvas.setPointerCapture(e.pointerId);aimPointer=e.pointerId;
+  point(e);fire=true;pushInput();
+});
+function endAim(e){
+  if(e.pointerId!==aimPointer)return;
+  aimPointer=null;fire=false;pushInput();
+}
+for(const event of ["pointerup","pointercancel","lostpointercapture"])canvas.addEventListener(event,endAim);
+function moveStick(e){
+  const rect=joystick.getBoundingClientRect();
+  const x=e.clientX-rect.left-rect.width/2,y=e.clientY-rect.top-rect.height/2;
+  const radius=rect.width*.31,length=Math.max(radius,Math.hypot(x,y));
+  movement.x=x/length;movement.y=y/length;
+  stick.style.transform="translate("+movement.x*radius+"px,"+movement.y*radius+"px)";
+}
+joystick.addEventListener("pointerdown",e=>{
+  if(movePointer!==null||state?.phase!=="live")return;
+  e.preventDefault();movePointer=e.pointerId;joystick.setPointerCapture(e.pointerId);moveStick(e);pushInput();
+});
+joystick.addEventListener("pointermove",e=>{if(e.pointerId===movePointer)moveStick(e);});
+for(const event of ["pointerup","pointercancel","lostpointercapture"])joystick.addEventListener(event,e=>{
+  if(e.pointerId!==movePointer)return;
+  movePointer=null;movement.x=movement.y=0;stick.style.transform="";pushInput();
+});
+function pushInput(){
   if(state?.phase!=="live")return;
   const p=state.players.find(p=>p.id===state.me);
   if(!p?.hp)return;
   const axis=(positive,negative,altPositive,altNegative)=>Number(keys.has(positive)||keys.has(altPositive))-Number(keys.has(negative)||keys.has(altNegative));
   const dx=cursor.x-p.x,dy=cursor.y-p.y,norm=Math.max(1,Math.hypot(dx,dy));
-  send({type:"input",x:axis("KeyD","KeyA","ArrowRight","ArrowLeft"),y:axis("KeyS","KeyW","ArrowDown","ArrowUp"),ax:dx/norm,ay:dy/norm,fire});
-},50);
+  const x=movePointer===null?axis("KeyD","KeyA","ArrowRight","ArrowLeft"):movement.x;
+  const y=movePointer===null?axis("KeyS","KeyW","ArrowDown","ArrowUp"):movement.y;
+  send({type:"input",x,y,ax:dx/norm,ay:dy/norm,fire});
+}
+setInterval(pushInput,50);
 $("create").disabled=false;
+$("solo").disabled=false;
 $("join-button").disabled=false;
