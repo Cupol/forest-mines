@@ -10,7 +10,10 @@ const joystick=$("joystick"),stick=$("stick");
 const movement={x:0,y:0};
 $("name").value=localStorage.getItem("arena-name")||"";
 $("code").value=new URLSearchParams(location.search).get("room")||"";
-maps.forEach((map,i)=>$("map").add(new Option(map.name,i)));
+for(const [index,map] of maps.entries()){
+  $("map").add(new Option(map.name,index));
+  $("solo-map").add(new Option(map.name,index));
+}
 for(const [id,item] of Object.entries(shop)){
   if(!item.cost)continue;
   const button=document.createElement("button");
@@ -19,8 +22,9 @@ for(const [id,item] of Object.entries(shop)){
   $("shop").append(button);
 }
 function send(message){if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify(message));}
-function connect(code,create,solo=false){
+function connect(code,create,soloMap=null){
   if(pending||socket)return;
+  const solo=soloMap!==null;
   const address=new URL(window.MINES_CONFIG?.api||location.origin);
   address.protocol=address.protocol==="https:"?"wss:":"ws:";
   address.pathname="/api/arena/"+code;
@@ -32,6 +36,10 @@ function connect(code,create,solo=false){
     pending=false;room=code;
     const name=$("name").value.trim();localStorage.setItem("arena-name",name);
     send({type:"name",name});
+    if(solo){
+      send({type:"map",index:soloMap});
+      send({type:"start"});
+    }
     $("entry").hidden=true;$("room").hidden=false;$("room-code").textContent=code;$("status").textContent="";
     history.replaceState({}, "",solo?location.pathname:"?room="+code);
   };
@@ -51,7 +59,7 @@ function connect(code,create,solo=false){
 }
 const roomCode=()=>Array.from(crypto.getRandomValues(new Uint8Array(6)),n=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[n%32]).join("");
 $("create").onclick=()=>connect(roomCode(),true);
-$("solo").onclick=()=>connect(roomCode(),true,true);
+$("solo").onclick=()=>connect(roomCode(),true,Number($("solo-map").value));
 $("join").onsubmit=event=>{
   event.preventDefault();
   const code=$("code").value.trim().toUpperCase();

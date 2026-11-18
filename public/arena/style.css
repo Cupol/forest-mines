@@ -25,3 +25,8 @@ canvas,#joystick{touch-action:none}
   #touch-controls p{display:none}
   canvas{max-height:58vh}
 }
+
+.solo-entry{display:grid;gap:8px;margin:12px 0 19px;padding-bottom:16px;border-bottom:1px solid var(--edge)}
+.solo-entry label{margin:0}
+.solo-entry select{margin-left:4px}
+#solo{min-height:44px;background:var(--accent);border-color:var(--accent);color:#142826;font-weight:700}
