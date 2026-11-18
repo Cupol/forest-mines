@@ -2,14 +2,16 @@ import { DurableObject } from "cloudflare:workers";
 import { DRAW_WORDS } from "../../public/draw-words.js";
 import { validFleet } from "../../public/sea-rules.js";
 import { Leaderboard } from "./leaderboard";
+import { ArenaRoom } from "./arena";
 export { Leaderboard };
+export { ArenaRoom };
 
 const DEFAULT_CONFIG: GameConfig = { width: 16, height: 16, mines: 33, flags: 17 };
 const MAX_PLAYERS = 20;
 const KEY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PLAYER_COLORS = ["#f2c66d", "#72c7e7", "#e889a0", "#9bd27a", "#bd9af0", "#f39a5e", "#65d2bb", "#df8add", "#a9bdff", "#d2dc72", "#ff8580", "#80d8e8", "#ffc978", "#90b8f0", "#c2dc85", "#eea7c7", "#70d5a0", "#e8a567", "#9e9cf2", "#c7d0da"];
 
-interface Env { ROOMS: DurableObjectNamespace<GameRoom>; RECORDS: DurableObjectNamespace<Leaderboard>; ASSETS: Fetcher }
+interface Env { ROOMS: DurableObjectNamespace<GameRoom>; RECORDS: DurableObjectNamespace<Leaderboard>; ARENAS: DurableObjectNamespace<ArenaRoom>; ASSETS: Fetcher }
 interface GameConfig { width: number; height: number; mines: number; flags: number; rules?: "classic" | "points" }
 import { TYPING_TEXTS } from "../../public/typing-texts.js";
 
@@ -185,6 +187,11 @@ function stripSecrets(game: Game, me: Player) {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const arena = url.pathname.match(/^\/api\/arena\/([A-Z0-9]{6})$/i);
+    if(arena){
+      if(request.headers.get("Upgrade")?.toLowerCase()!=="websocket")return new Response("WebSocket connection required",{status:426});
+      return env.ARENAS.get(env.ARENAS.idFromName(arena[1].toUpperCase())).fetch(request);
+    }
     if(url.pathname==="/api/records"){
       const mode=url.searchParams.get("game")??"";
       if(request.method!=="GET")return new Response(null,{status:405,headers:{Allow:"GET"}});
